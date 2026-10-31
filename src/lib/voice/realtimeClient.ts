@@ -451,6 +451,7 @@ export class RealtimeClient {
   private endAfterGoodbye() {
     if (this.ending) return;
     this.ending = true;
+    this.emit({ type: "session_closing", by: "assistant" });
     // Nothing the user says from here on should start a new turn.
     this.mic?.getAudioTracks().forEach((t) => (t.enabled = false));
     const hangUp = () => {

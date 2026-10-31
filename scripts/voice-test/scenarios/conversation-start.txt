@@ -1,0 +1,5 @@
+# First half of the resume test: ask something, then hang up by voice.
+# Run conversation-resume next, after "Continue this conversation" or reopening it from the list.
+@voice Samantha
+What's on hold?
+I am done, close it for now.

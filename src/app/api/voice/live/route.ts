@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resumeHistory } from "@/lib/conversations/resume";
 import { boardBriefing } from "@/lib/devops/briefing";
 import { buildLiveSession, LIVE_SESSIONS_URL } from "@/lib/voice/liveConfig";
 
@@ -16,17 +17,17 @@ export async function POST(req: Request) {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) return NextResponse.json({ error: "Missing environment variable OPENAI_API_KEY." }, { status: 500 });
 
-  const { sdp } = (await req.json().catch(() => ({}))) as { sdp?: unknown };
+  const { sdp, conversationId } = (await req.json().catch(() => ({}))) as { sdp?: unknown; conversationId?: unknown };
   if (typeof sdp !== "string" || !sdp.startsWith("v=")) {
     return NextResponse.json({ error: "Missing SDP offer." }, { status: 400 });
   }
 
-  const briefing = await boardBriefing(req.headers);
+  const [briefing, history] = await Promise.all([boardBriefing(req.headers), resumeHistory(req.headers, conversationId)]);
   const res = await fetch(LIVE_SESSIONS_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      session: buildLiveSession(briefing.userName, process.env, briefing.summary),
+      session: buildLiveSession(briefing.userName, process.env, briefing.summary, history),
       transport: { type: "webrtc", sdp },
     }),
     cache: "no-store",

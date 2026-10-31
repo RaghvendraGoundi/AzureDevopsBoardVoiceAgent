@@ -9,6 +9,18 @@ export interface TranscriptEntry {
   final: boolean;
   /** Assistant reply cut off by the user (barge-in). */
   interrupted?: boolean;
+  /** When the entry started (ms since epoch). */
+  at?: number;
+}
+
+/** Shown in the popup when a call ends. */
+export interface SessionSummary {
+  durationMs: number;
+  /** Things said (both sides) during the call. */
+  turns: number;
+  /** Board changes made during the call. */
+  changes: ActivityEntry[];
+  endedBy: "assistant" | "user" | "connection";
 }
 
 export interface ActivityEntry {
@@ -35,6 +47,12 @@ export interface WorkspaceState {
   errors: { id: number; message: string }[];
   /** Project and current sprint for the header. */
   boardInfo: BoardInfo | null;
+  /** When the current call connected. */
+  sessionStartedAt: number | null;
+  /** Set while the call is ending: who ended it. */
+  closing: "assistant" | "user" | null;
+  /** The call that just ended, for the "Session ended" popup. */
+  sessionSummary: SessionSummary | null;
 }
 
 export const initialWorkspaceState: WorkspaceState = {
@@ -50,6 +68,9 @@ export const initialWorkspaceState: WorkspaceState = {
   flash: {},
   errors: [],
   boardInfo: null,
+  sessionStartedAt: null,
+  closing: null,
+  sessionSummary: null,
 };
 
 export type WorkspaceAction =
@@ -57,7 +78,10 @@ export type WorkspaceAction =
   | { type: "reset" }
   | { type: "dismiss_error"; id: number }
   | { type: "clear_flash"; id: number }
-  | { type: "board_info"; info: BoardInfo | null };
+  | { type: "board_info"; info: BoardInfo | null }
+  /** Shows a saved conversation (its transcript and board changes). */
+  | { type: "load_conversation"; transcript: TranscriptEntry[]; activity: ActivityEntry[] }
+  | { type: "dismiss_session_summary" };
 
 let errorSeq = 0;
 
@@ -71,7 +95,7 @@ function upsertTranscript(
   const idx = list.findIndex((e) => e.id === id);
   if (idx === -1) {
     if (final && !text.trim()) return list;
-    return [...list, { id, role, text, final }];
+    return [...list, { id, role, text, final, at: Date.now() }];
   }
   const existing = list[idx];
   // A final transcript replaces streamed deltas; an empty final means silence/noise, so drop it.
@@ -89,12 +113,43 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
     case "reset":
       return { ...initialWorkspaceState, boardInfo: state.boardInfo };
 
-    case "connection":
-      return {
+    case "connection": {
+      const next = {
         ...state,
         connection: action.state,
         connectionError: action.state === "failed" ? (action.error ?? "Connection failed.") : null,
         activeTool: action.state === "connected" ? state.activeTool : null,
+      };
+      if (action.state === "connected") return { ...next, sessionStartedAt: Date.now(), closing: null, sessionSummary: null };
+      if ((action.state === "disconnected" || action.state === "failed") && state.sessionStartedAt !== null) {
+        const since = state.sessionStartedAt;
+        return {
+          ...next,
+          sessionStartedAt: null,
+          closing: null,
+          sessionSummary: {
+            durationMs: Date.now() - since,
+            turns: state.transcript.filter((e) => (e.at ?? 0) >= since && e.text.trim()).length,
+            changes: state.activity.filter((a) => a.at >= since && a.kind !== "cancelled"),
+            endedBy: action.state === "failed" ? "connection" : (state.closing ?? "user"),
+          },
+        };
+      }
+      return next;
+    }
+
+    case "session_closing":
+      return { ...state, closing: action.by };
+
+    case "dismiss_session_summary":
+      return { ...state, sessionSummary: null };
+
+    case "load_conversation":
+      return {
+        ...initialWorkspaceState,
+        boardInfo: state.boardInfo,
+        transcript: action.transcript,
+        activity: action.activity,
       };
 
     case "agent_status":

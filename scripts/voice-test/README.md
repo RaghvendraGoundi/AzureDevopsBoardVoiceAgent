@@ -36,6 +36,7 @@ On the emulator, `npm run board:reset` undoes them.
 | `board-tour` | My sprint work, a state filter, an item's hierarchy, creating a task under a story, moving it to the next sprint |
 | `turn-taking` | A mid-sentence pause stays one turn, a cough gets no reply, talking over the assistant stops it, "I am done" hangs up |
 | `confirm-and-cancel` | "No" writes nothing; a clear "yes" writes once |
+| `conversation-start`, then `conversation-resume` | A conversation is saved and named; a new call in it remembers "the second one you mentioned"; the closing and "Session ended" popups |
 
 ## How the tests are made
 

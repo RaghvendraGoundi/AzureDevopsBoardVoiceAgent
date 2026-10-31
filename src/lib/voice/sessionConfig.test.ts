@@ -94,4 +94,11 @@ describe("buildSessionConfig", () => {
     const whisper = buildSessionConfig({ model: "m", transcriptionModel: "gpt-realtime-whisper", currentUser: "Me" });
     expect(whisper.audio.input.transcription).not.toHaveProperty("prompt");
   });
+
+  it("puts a resumed conversation's history last in the instructions", () => {
+    const s = buildSessionConfig({ model: "m", transcriptionModel: "t", currentUser: "Me", history: "# Earlier in this conversation\nUser: hi" });
+    expect(s.instructions.trimEnd().endsWith("User: hi")).toBe(true);
+    expect(buildSessionConfig({ model: "m", transcriptionModel: "t", currentUser: "Me" }).instructions).not.toContain("Earlier in this conversation");
+  });
 });
+

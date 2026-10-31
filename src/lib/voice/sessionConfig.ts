@@ -71,12 +71,17 @@ export const BOARD_RULES = `# Confirmation
 - The most recent tool result is the current state of the board. Earlier results in the conversation may be out of date, so look an item up again before relying on an old result for a change.
 - A user message that starts with "[ui]" describes a button the user pressed on screen. Acknowledge it in a few words and don't repeat the action.`;
 
+/** Earlier turns of a resumed conversation, last so the model treats them as background. */
+export function historyBlock(history: string | null | undefined) {
+  return history ? `\n\n${history}` : "";
+}
+
 /** The "# Board" section: project, sprint, hierarchy and states, when known. */
 export function boardSection(summary: string | null | undefined) {
   return summary ? `\n# Board\n${summary}\n` : "";
 }
 
-export function buildInstructions(currentUser: string, boardSummary?: string | null) {
+export function buildInstructions(currentUser: string, boardSummary?: string | null, history?: string | null) {
   return `# Role and Objective
 You are a voice assistant for an Azure DevOps board. You help ${currentUser} review, create and update work items hands-free. Success means the board ends up exactly as the user intended, with nothing changed that they didn't confirm.
 ${boardSection(boardSummary)}
@@ -127,7 +132,7 @@ end_session
 - Don't use when: "done" describes a work item, like "mark it done" or "move it to done".
 ${TOOL_FAILURES}
 
-${BOARD_RULES}`;
+${BOARD_RULES}${historyBlock(history)}`;
 }
 
 function envNumber(name: string, fallback: number, min: number, max: number) {
@@ -197,17 +202,19 @@ interface SessionOptions {
   currentUser: string;
   /** Project, sprint, hierarchy and states (see summarizeBoard). */
   boardSummary?: string | null;
+  /** Earlier turns when resuming a conversation (see historySection in conversations/store). */
+  history?: string | null;
   /** Extra words that help the transcriber, e.g. current work item titles. */
   keywords?: string[];
 }
 
 /** GA Realtime session config, identical for OpenAI and Azure. */
-export function buildSessionConfig({ model, transcriptionModel, currentUser, boardSummary, keywords = [] }: SessionOptions) {
+export function buildSessionConfig({ model, transcriptionModel, currentUser, boardSummary, history, keywords = [] }: SessionOptions) {
   const hintable = HINTABLE_TRANSCRIBERS.has(transcriptionModel);
   return {
     type: "realtime",
     model,
-    instructions: buildInstructions(currentUser, boardSummary),
+    instructions: buildInstructions(currentUser, boardSummary, history),
     output_modalities: ["audio"],
     reasoning: { effort: reasoningEffort() },
     // Token probabilities let the browser reject transcripts the transcriber only guessed at (coughs, noise).

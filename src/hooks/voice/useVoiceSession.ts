@@ -7,6 +7,7 @@ import { RealtimeClient, type InputMode, type SessionCredentials } from "@/lib/v
 import { executeToolRemote, fetchSessionCredentials, resolveActionRemote } from "@/lib/voice/toolExecutor";
 import type { BoardInfo } from "@/lib/devops/briefing";
 import type { VoiceEvent } from "@/types/voice";
+import { useConversations } from "./useConversations";
 import { initialWorkspaceState, workspaceReducer } from "./workspaceReducer";
 
 /**
@@ -28,6 +29,11 @@ export function useVoiceSession() {
   const clientRef = useRef<RealtimeClient | LiveClient | null>(null);
   const demoAbort = useRef<AbortController | null>(null);
   const prefetched = useRef<{ creds: Promise<SessionCredentials>; at: number } | null>(null);
+  const conversations = useConversations(state, dispatch, demoRunning);
+  const { ensureConversation, newConversation } = conversations;
+  // Whether the open conversation already has turns, without making start() depend on the transcript.
+  const hasHistory = useRef(false);
+  hasHistory.current = state.transcript.some((e) => e.final && e.text.trim());
 
   /** Mint a session key ahead of time so pressing Start doesn't wait on it. */
   const prefetch = useCallback(() => {
@@ -66,15 +72,19 @@ export function useVoiceSession() {
     clientRef.current = client;
     setMuted(false);
     try {
-      if (client instanceof LiveClient) await client.connect();
-      else await client.connect(takeCredentials, mode);
+      const conversationId = await ensureConversation();
+      // A prefetched key has no history in it, so a resumed conversation needs a fresh one.
+      const credentials = hasHistory.current ? () => fetchSessionCredentials(conversationId) : takeCredentials;
+      if (client instanceof LiveClient) await client.connect(conversationId);
+      else await client.connect(credentials, mode);
     } catch {
       // The client already emitted a failed connection event with the reason.
       clientRef.current = null;
     }
-  }, [onEvent, mode, engine, takeCredentials, prefetch]);
+  }, [onEvent, mode, engine, takeCredentials, prefetch, ensureConversation]);
 
   const stop = useCallback(() => {
+    if (clientRef.current) dispatch({ type: "session_closing", by: "user" });
     clientRef.current?.disconnect();
     clientRef.current = null;
     setMuted(false);
@@ -146,14 +156,16 @@ export function useVoiceSession() {
     if (clientRef.current || demoRunning) return;
     const ctrl = new AbortController();
     demoAbort.current = ctrl;
-    dispatch({ type: "reset" });
+    // The demo runs in a blank, unsaved conversation.
+    newConversation();
     setDemoRunning(true);
     try {
       await runDemo(dispatch, ctrl.signal);
     } finally {
       setDemoRunning(false);
+      dispatch({ type: "dismiss_session_summary" });
     }
-  }, [demoRunning]);
+  }, [demoRunning, newConversation]);
 
   const stopDemo = useCallback(() => demoAbort.current?.abort(), []);
 
@@ -222,6 +234,8 @@ export function useVoiceSession() {
     talking,
     engine,
     setEngine,
+    conversations,
+    dismissSessionSummary: () => dispatch({ type: "dismiss_session_summary" }),
     setMode,
     pttStart,
     pttEnd,

@@ -33,6 +33,8 @@ export type VoiceEvent =
   | { type: "assistant_transcript"; id: string; text: string; final: boolean }
   /** The user talked over the assistant; any reply still streaming was cut off. */
   | { type: "assistant_interrupted" }
+  /** The call is about to end: the assistant is saying goodbye, or the user pressed End. */
+  | { type: "session_closing"; by: "assistant" | "user" }
   | { type: "tool_started"; callId: string; tool: string; args: unknown }
   | { type: "tool_finished"; callId: string; tool: string; ok: boolean }
   | WorkspaceEvent;

@@ -10,13 +10,13 @@
  */
 
 import { toolDefinitions } from "@/lib/devops/tools";
-import { BOARD_RULES, BOARD_TOOL_GUIDE, boardSection, TOOL_FAILURES } from "./sessionConfig";
+import { BOARD_RULES, BOARD_TOOL_GUIDE, boardSection, historyBlock, TOOL_FAILURES } from "./sessionConfig";
 
 const REASONING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh"] as const;
 
 export const LIVE_SESSIONS_URL = "https://api.openai.com/v1/live/sessions";
 
-export function buildLiveInstructions(currentUser: string) {
+export function buildLiveInstructions(currentUser: string, history?: string | null) {
   return `# Role and Objective
 You are a voice assistant for an Azure DevOps board. You help ${currentUser} review, create and update work items hands-free, and you can chat naturally too.
 
@@ -46,7 +46,7 @@ If the user clearly finished but you couldn't understand them, ask once, briefly
 One to three short sentences for most replies. You are speaking, not writing: no lists or symbols.
 
 # Ending
-When the user says they are done, such as "I am done", "that's all", "close it for now" or "goodbye", say a goodbye of a few words and nothing more. The app hangs up after your goodbye. If a change is still waiting for a yes, ask whether to drop it first.`;
+When the user says they are done, such as "I am done", "that's all", "close it for now" or "goodbye", say a goodbye of a few words and nothing more. The app hangs up after your goodbye. If a change is still waiting for a yes, ask whether to drop it first.${historyBlock(history)}`;
 }
 
 /**
@@ -58,7 +58,7 @@ export const LIVE_BACKEND_TOOLS = toolDefinitions
   .filter((t) => t.name !== "wait_for_user" && t.name !== "end_session")
   .map((t) => ({ ...t, strict: false }));
 
-export function buildBackendInstructions(currentUser: string, boardSummary?: string | null) {
+export function buildBackendInstructions(currentUser: string, boardSummary?: string | null, history?: string | null) {
   return `# Role
 You are the backend of a voice assistant for ${currentUser}'s Azure DevOps board. A voice model talks to the user and hands board requests to you. Use the tools to act on the board, then reply with what the voice model should tell the user.
 ${boardSection(boardSummary)}
@@ -71,7 +71,7 @@ ${boardSection(boardSummary)}
 ${BOARD_TOOL_GUIDE}
 ${TOOL_FAILURES}
 
-${BOARD_RULES}`;
+${BOARD_RULES}${historyBlock(history)}`;
 }
 
 function reasoningEffort(env: NodeJS.ProcessEnv) {
@@ -79,16 +79,16 @@ function reasoningEffort(env: NodeJS.ProcessEnv) {
   return REASONING_EFFORTS.find((e) => e === value) ?? "low";
 }
 
-export function buildLiveSession(currentUser: string, env = process.env, boardSummary?: string | null) {
+export function buildLiveSession(currentUser: string, env = process.env, boardSummary?: string | null, history?: string | null) {
   return {
     model: env.OPENAI_LIVE_MODEL?.trim() || "gpt-live-1",
-    instructions: buildLiveInstructions(currentUser),
+    instructions: buildLiveInstructions(currentUser, history),
     audio: { output: { voice: env.LIVE_VOICE?.trim() || "marin" } },
     delegation: {
       type: "responses",
       responses: {
         model: env.LIVE_BACKEND_MODEL?.trim() || "gpt-6-luna",
-        instructions: buildBackendInstructions(currentUser, boardSummary),
+        instructions: buildBackendInstructions(currentUser, boardSummary, history),
         reasoning: { effort: reasoningEffort(env) },
         tools: LIVE_BACKEND_TOOLS,
         tool_choice: "auto",

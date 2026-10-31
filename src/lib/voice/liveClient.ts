@@ -85,6 +85,8 @@ export class LiveClient {
   private sessionReady: (() => void) | null = null;
 
   private seq = 0;
+  /** Makes transcript ids unique across sessions of the same conversation. */
+  private readonly sessionTag = Date.now().toString(36);
   private user: Utterance | null = null;
   private assistant: Utterance | null = null;
   /** The user asked to end the call; hang up once the goodbye is over. */
@@ -105,7 +107,8 @@ export class LiveClient {
     this.opts.onEvent(event);
   }
 
-  async connect() {
+  /** With a conversation id, the session picks up that conversation's earlier turns. */
+  async connect(conversationId?: string | null) {
     this.closedByUser = false;
     this.emit({ type: "connection", state: "connecting" });
     this.emit({ type: "agent_status", status: "connecting" });
@@ -154,7 +157,7 @@ export class LiveClient {
       const res = await fetch("/api/voice/live", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sdp: pc.localDescription?.sdp }),
+        body: JSON.stringify({ sdp: pc.localDescription?.sdp, conversationId: conversationId ?? null }),
       });
       const data = (await res.json().catch(() => ({}))) as { sdp?: string; error?: string };
       if (!res.ok || !data.sdp) throw new Error(data.error ?? "Couldn't start a GPT-Live session.");
@@ -340,7 +343,7 @@ export class LiveClient {
 
   private onUserWords(delta: string) {
     if (this.ending) return;
-    this.user ??= { id: `live-user-${++this.seq}`, text: "" };
+    this.user ??= { id: `live-${this.sessionTag}-user-${++this.seq}`, text: "" };
     const u = this.user;
     u.text += delta;
     clearTimeout(u.timer);
@@ -350,7 +353,7 @@ export class LiveClient {
   }
 
   private onAssistantWords(delta: string) {
-    this.assistant ??= { id: `live-assistant-${++this.seq}`, text: "" };
+    this.assistant ??= { id: `live-${this.sessionTag}-assistant-${++this.seq}`, text: "" };
     const a = this.assistant;
     a.text += delta;
     clearTimeout(a.timer);
@@ -392,6 +395,7 @@ export class LiveClient {
   /** The user said they're done: let the assistant say goodbye, then hang up. */
   private endAfterGoodbye() {
     this.ending = true;
+    this.emit({ type: "session_closing", by: "assistant" });
     this.mic?.getAudioTracks().forEach((t) => (t.enabled = false));
     // finishAssistant() hangs up once the goodbye has been spoken; these are the fallbacks.
     this.armEndTimer(this.assistant ? GOODBYE_MAX_MS : GOODBYE_START_MS);

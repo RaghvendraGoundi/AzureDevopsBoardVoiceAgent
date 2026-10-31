@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resumeHistory } from "@/lib/conversations/resume";
 import { boardBriefing } from "@/lib/devops/briefing";
 import { ProviderConfigError, resolveProvider } from "@/lib/voice/providers";
 import { buildSessionConfig, buildSpeakingTurnDetection, buildTurnDetection } from "@/lib/voice/sessionConfig";
@@ -19,13 +20,15 @@ export async function POST(req: Request) {
 
   // Also warms the board caches while the call connects. Current item titles
   // help the transcriber hear names like "rate limiting" correctly.
-  const briefing = await boardBriefing(req.headers);
+  const { conversationId } = (await req.json().catch(() => ({}))) as { conversationId?: unknown };
+  const [briefing, history] = await Promise.all([boardBriefing(req.headers), resumeHistory(req.headers, conversationId)]);
   const session = buildSessionConfig({
     model: provider.model,
     transcriptionModel: provider.transcriptionModel,
     currentUser: briefing.userName,
     boardSummary: briefing.summary,
     keywords: briefing.keywords,
+    history,
   });
 
   const res = await fetch(provider.clientSecretUrl, {

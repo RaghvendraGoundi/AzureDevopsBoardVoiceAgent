@@ -48,6 +48,12 @@ function logTiming(label: string, ms: number, status: number) {
   console.info(`[ado] ${label} ${status} ${Math.round(ms)}ms`);
 }
 
+/** Who is asking: scopes conversations and confirmations. Null when Azure mode has no credential. */
+export async function getUserKey(headers: Headers): Promise<string | null> {
+  if (boardProvider() === "emulated") return "local";
+  return (await getAzureDevOpsCredential(headers))?.userKey ?? null;
+}
+
 export async function getBoardFor(headers: Headers): Promise<BoardSession> {
   if (boardProvider() === "emulated") return { board: getEmulatedBoard(), userKey: "local" };
 

@@ -1,0 +1,4 @@
+# Second half: these only make sense with the earlier turns, so the assistant must have them.
+@voice Samantha
+Tell me more about the second one you mentioned.
+Thanks, that's all.

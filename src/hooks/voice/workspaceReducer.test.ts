@@ -39,7 +39,8 @@ describe("workspaceReducer", () => {
       { type: "assistant_transcript", id: "a2", text: "", final: false },
       { type: "assistant_interrupted" },
     ]);
-    expect(s.transcript).toEqual([{ id: "a1", role: "assistant", text: "You have five active", final: true, interrupted: true }]);
+    expect(s.transcript).toMatchObject([{ id: "a1", role: "assistant", text: "You have five active", final: true, interrupted: true }]);
+    expect(s.transcript).toHaveLength(1);
   });
 
   it("tracks the active tool label", () => {
@@ -89,5 +90,38 @@ describe("workspaceReducer", () => {
     const info = { provider: "emulated" as const, project: "Contoso", team: "Contoso Team", user: "Me", sprint: null };
     const s = apply([{ type: "board_info", info }, { type: "reset" }]);
     expect(s.boardInfo).toEqual(info);
+  });
+
+  it("summarises a call when it ends: who ended it, messages and board changes", () => {
+    const created = { ...items[0], id: 2000, title: "Add audit logging" };
+    const s = apply([
+      { type: "connection", state: "connected" },
+      { type: "user_transcript", id: "u1", text: "I am done", final: true },
+      { type: "work_item_created", item: created },
+      { type: "session_closing", by: "assistant" },
+    ]);
+    expect(s.closing).toBe("assistant");
+    const ended = apply([{ type: "connection", state: "disconnected" }], s);
+    expect(ended.closing).toBeNull();
+    expect(ended.sessionSummary).toMatchObject({ endedBy: "assistant", turns: 1, changes: [{ kind: "created", item: { id: 2000 } }] });
+    expect(apply([{ type: "dismiss_session_summary" }], ended).sessionSummary).toBeNull();
+  });
+
+  it("reports a lost connection, and no summary when nothing was connected", () => {
+    const lost = apply([{ type: "connection", state: "connected" }, { type: "connection", state: "failed", error: "x" }]);
+    expect(lost.sessionSummary?.endedBy).toBe("connection");
+    expect(apply([{ type: "connection", state: "disconnected" }]).sessionSummary).toBeNull();
+  });
+
+  it("loads a saved conversation in place of the current one", () => {
+    const s = apply([
+      { type: "user_transcript", id: "old", text: "Unrelated", final: true },
+      {
+        type: "load_conversation",
+        transcript: [{ id: "t1", role: "user", text: "What's on hold?", final: true, at: 1 }],
+        activity: [],
+      },
+    ]);
+    expect(s.transcript.map((t) => t.id)).toEqual(["t1"]);
   });
 });
