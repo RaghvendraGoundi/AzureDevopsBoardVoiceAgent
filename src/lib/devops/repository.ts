@@ -1,0 +1,45 @@
+import type {
+  BoardContext,
+  CreateWorkItemInput,
+  WorkItem,
+  WorkItemDetail,
+  WorkItemPatch,
+  WorkItemQuery,
+} from "./types";
+
+/**
+ * Storage-agnostic access to a board. Implemented by the emulated board and
+ * by the Azure DevOps REST adapter, so the voice tools never know which one
+ * they are talking to.
+ */
+export interface WorkItemRepository {
+  /** Who the user is, the process (types, states, hierarchy), sprints and team. */
+  context(): Promise<BoardContext>;
+  query(q: WorkItemQuery): Promise<WorkItem[]>;
+  get(id: number): Promise<WorkItem | null>;
+  /** The item with its parent chain and children. */
+  getDetail(id: number): Promise<WorkItemDetail | null>;
+  create(input: CreateWorkItemInput): Promise<WorkItem>;
+  /** Fails with "conflict" if the item is no longer at `expectedRev`. */
+  update(id: number, patch: WorkItemPatch, expectedRev?: number): Promise<WorkItem>;
+}
+
+export type WorkItemErrorCode =
+  | "not_found"
+  | "invalid"
+  | "invalid_transition"
+  | "unauthorized"
+  | "forbidden"
+  | "conflict"
+  | "rate_limited"
+  | "timeout"
+  | "unavailable";
+
+export class WorkItemError extends Error {
+  constructor(
+    message: string,
+    readonly code: WorkItemErrorCode,
+  ) {
+    super(message);
+  }
+}
