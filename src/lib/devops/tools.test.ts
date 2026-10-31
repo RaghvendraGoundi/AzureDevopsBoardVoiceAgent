@@ -44,9 +44,16 @@ describe("list_work_items", () => {
     expect(items(await run("list_work_items", { assignee: "priya" })).map((i) => i.id)).toEqual([1037]);
   });
 
+  it("finds titles despite hyphens and filler words", async () => {
+    expect(items(await run("list_work_items", { search: "the rate-limiting middleware task" })).map((i) => i.id)).toEqual([1026]);
+    expect(items(await run("list_work_items", { search: "#1025" })).map((i) => i.id)).toEqual([1025]);
+    // Named items are found even when they're done.
+    expect(items(await run("list_work_items", { search: "node runtime" })).map((i) => i.state)).toEqual(["Closed"]);
+  });
+
   it("searches the whole board when given words or a parent", async () => {
     expect(items(await run("list_work_items", { search: "dark mode" })).map((i) => i.id)).toEqual([1029]);
-    expect(items(await run("list_work_items", { parent_id: 1034 })).map((i) => i.id).sort()).toEqual([1026, 1037]);
+    expect(items(await run("list_work_items", { parent_id: 1034 })).map((i) => i.id).sort()).toEqual([1026, 1031, 1032, 1037]);
   });
 
   it("explains unknown filters instead of guessing", async () => {
@@ -149,6 +156,12 @@ describe("create flow", () => {
     expect(proposal.output).toMatchObject({ ok: true, defaults_applied: { type: "Task", sprint: "Sprint 42", assignee: "Test User", priority: 2 } });
     const r = await run("confirm_action", { action_id: proposal.output.action_id });
     expect(r.output.created).toMatchObject({ type: "Task", state: "New", sprint: "Sprint 42", parent: "#1024 Implement authentication" });
+  });
+
+  it("never puts a new task into a sprint that has already finished", async () => {
+    await deps.board.update(1024, { iterationPath: "Contoso\\Sprint 41" });
+    const p = await run("propose_create_work_item", { title: "Add audit logging", parent_id: 1024 });
+    expect(p.output.defaults_applied).toMatchObject({ sprint: "Sprint 42" });
   });
 
   it("puts a feature under an epic on the backlog, unassigned", async () => {

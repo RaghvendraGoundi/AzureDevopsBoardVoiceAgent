@@ -1,0 +1,7 @@
+# Confirmation safety: a "no" must not write, a clear "yes" must.
+@voice Samantha
+What am I working on this sprint?
+Mark the second one as blocked.
+No, cancel that.
+Mark the second one as in review.
+Yes, do it.

@@ -1,0 +1,8 @@
+# Turn-taking: a mid-sentence pause, a cough, talking over the assistant, and hanging up.
+# "|" inserts a 1.3 s pause inside one utterance; [cough] and [silence ms] are generated sounds.
+@voice Samantha
+Show me the bugs | in the current sprint.
+[cough]
+What tasks do I have in progress?
+!Stop, only the ones on hold.
+I am done, close it for now.

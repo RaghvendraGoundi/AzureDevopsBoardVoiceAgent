@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "board:reset": "node scripts/reset-board.mjs"
+    "board:reset": "node scripts/reset-board.mjs",
+    "voice:audio": "node scripts/voice-test/make-audio.mjs"
   },
   "dependencies": {
     "next": "^15.5.4",

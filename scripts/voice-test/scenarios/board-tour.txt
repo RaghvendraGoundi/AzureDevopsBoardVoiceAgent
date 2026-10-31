@@ -1,0 +1,10 @@
+# Board tour: reads, a hierarchy lookup, a create under a parent, a sprint move.
+# Writes are real on whichever board the app points at (each one asks for a yes first).
+@voice Samantha
+What am I working on this sprint?
+What's on hold?
+Tell me about the first one.
+Create a task to add audit logging under the Entra ID sign-in story.
+Yes, create it.
+Move it to the next sprint.
+Yes.

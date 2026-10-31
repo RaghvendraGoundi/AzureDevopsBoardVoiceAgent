@@ -83,18 +83,41 @@ export function categoryFor(input: string): StateCategory | null {
   return CATEGORY_ALIASES.find(([re]) => re.test(n))?.[1] ?? null;
 }
 
+const FILLER_WORDS = new Set(["in", "to", "the", "for", "a", "an", "on", "of", "it", "as"]);
+const keyWords = (s: string) => norm(s).split(" ").filter((w) => w && !FILLER_WORDS.has(w));
+const HOLD = /^(blocked|paused|pause|waiting|stuck|parked|hold|on hold|put on hold)$/;
+
 /** The state name for what the user said, valid for this type. */
 export function resolveState(ctx: BoardContext, type: string, input: string): string | null {
   const info: TypeInfo | undefined = ctx.types[type];
   if (!info) return null;
+  const states = info.states.filter((s) => s.category !== "Removed" || categoryFor(input) === "Removed");
   const exact = info.states.find((s) => norm(s.name) === norm(input));
   if (exact) return exact.name;
-  const category = categoryFor(input);
-  // "reopen" means back to the first in-progress-or-proposed state.
-  if (category === "Proposed" && /reopen|open again/.test(norm(input))) {
-    return info.states.find((s) => s.category === "InProgress")?.name ?? info.states.find((s) => s.category === "Proposed")?.name ?? null;
+
+  // Custom states like "In Review" or "On Hold": match on the words in their names.
+  const said = keyWords(input);
+  const byWords =
+    states.find((s) => keyWords(s.name).length > 0 && keyWords(s.name).every((w) => said.includes(w))) ??
+    states.find((s) => said.length > 0 && said.every((w) => keyWords(s.name).includes(w)));
+  if (byWords) return byWords.name;
+  if (HOLD.test(norm(input))) {
+    const hold = states.find((s) => /hold|block|pause|wait/i.test(s.name));
+    if (hold) return hold.name;
   }
-  return category ? (info.states.find((s) => s.category === category)?.name ?? null) : null;
+
+  const category = categoryFor(input);
+  const first = (c: StateCategory) => states.find((s) => s.category === c)?.name ?? null;
+  const last = (c: StateCategory) => [...states].reverse().find((s) => s.category === c)?.name ?? null;
+  // "reopen" means back to the first in-progress-or-proposed state.
+  if (category === "Proposed" && /reopen|open again/.test(norm(input))) return first("InProgress") ?? first("Proposed");
+  if (!category) return HOLD.test(norm(input)) ? first("InProgress") : null;
+  // A process without a Resolved state but with a later in-progress stage (e.g. "In Review") uses that.
+  if (category === "Resolved") {
+    const inProgress = states.filter((s) => s.category === "InProgress");
+    return first("Resolved") ?? (inProgress.length > 1 ? last("InProgress") : null);
+  }
+  return first(category);
 }
 
 export function categoryOf(ctx: BoardContext, type: string, state: string): StateCategory {
@@ -163,6 +186,24 @@ export function resolvePerson(ctx: BoardContext, input: string): Person | null {
     // Unknown to the team list but clearly an email: Azure DevOps can resolve it.
     (raw.includes("@") ? { displayName: input.trim(), uniqueName: input.trim() } : null)
   );
+}
+
+const SEARCH_FILLER = new Set([
+  "a", "an", "the", "in", "on", "of", "for", "to", "with", "and", "or", "my", "our", "about",
+  "story", "stories", "task", "tasks", "bug", "bugs", "item", "items", "ticket", "feature", "epic", "initiative",
+]);
+
+/**
+ * What the user said, reduced to the words worth matching in a title:
+ * "the Entra ID sign-in story" → "entra id sign". Every remaining word must
+ * appear in the title, so hyphens and filler words no longer cause misses.
+ */
+export function searchText(input: string): string {
+  const raw = input.trim();
+  if (/^#?\d+$/.test(raw)) return raw.replace("#", "");
+  const words = raw.toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ").filter(Boolean);
+  const kept = words.filter((w) => !SEARCH_FILLER.has(w));
+  return (kept.length ? kept : words).join(" ");
 }
 
 /** A short description of the board for the model's instructions. */

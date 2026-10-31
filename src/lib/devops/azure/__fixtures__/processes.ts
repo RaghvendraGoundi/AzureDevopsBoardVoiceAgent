@@ -71,3 +71,13 @@ export const MEMBERS = {
     { identity: { id: "u-2", displayName: "Luis Ortega", uniqueName: "luis@fabrikam.com" } },
   ],
 };
+
+/** MyWork: inherited Agile with Initiative on the Features level and a five-state workflow (scripts/azure_boards_setup.py). */
+const MYWORK_STATES = { New: "Proposed", "In Progress": "InProgress", "On Hold": "InProgress", "In Review": "InProgress", Completed: "Completed", Removed: "Removed" };
+export const MYWORK_BACKLOG = {
+  portfolioBacklogs: [backlog("Epics", 4, ["Epic"]), backlog("Initiatives", 3, ["Initiative"])],
+  requirementBacklog: backlog("Stories", 2, ["User Story", "Bug"]),
+  taskBacklog: backlog("Tasks", 1, ["Task"]),
+  bugWorkItems: { name: "Bugs", workItemTypes: [{ name: "Bug" }] },
+  workItemTypeMappedStates: ["Epic", "Initiative", "User Story", "Bug", "Task"].map((t) => ({ workItemTypeName: t, states: MYWORK_STATES })),
+};

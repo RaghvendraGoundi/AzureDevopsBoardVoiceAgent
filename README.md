@@ -16,6 +16,7 @@ You don't need a key for **Simulate demo**. It scripts the speech but calls the 
 |---|---|
 | `npm test` | Unit tests (board rules, tools, confirmation lifecycle, UI reducer) |
 | `npm run board:reset` | Reseed the emulated board (`.data/board.json`) |
+| `npm run voice:audio -- --all` | Generate clips for the voice end-to-end tests ([scripts/voice-test](scripts/voice-test/README.md)) |
 
 ## How it fits together
 
@@ -33,3 +34,17 @@ You don't need a key for **Simulate demo**. It scripts the speech but calls the 
 **What the tools understand.** The process (Agile, Scrum, Basic, CMMI or custom) is read from the project at session start. "Story", "done", "in progress", "next sprint" and teammates' first names are mapped to that project's own types, states, sprints and people. New items go in the right sprint and under a parent: tasks follow their story's sprint, and portfolio items stay on the backlog. If a parent is missing, the agent asks which item to put it under.
 
 **Latency.** Starting a session loads the project context (6 requests in parallel) and the user's current sprint work while the call connects. Both are cached per user: the context for 15 minutes, lists for 60 seconds, and items for 30 seconds. Each write clears what it changed. A list takes 2 to 3 requests. A create or update is one JSON Patch request, with a revision check so a stale preview can't overwrite someone else's change. Timings are logged as `[ado] …` and `[tool] …`.
+
+### Set up and fill a test board
+
+`scripts/azure_boards_setup.py` prepares the `your-org/MyWork` project for testing. It sets up Epic > Initiative > User Story > Task with the states New, In Progress, On Hold, In Review and Completed, 12 two-week sprints from 2026-10-01, backlogs and board columns. It then seeds about 270 work items across past, current and future sprints. It's safe to re-run.
+
+```bash
+python3 -m pip install requests
+python3 scripts/azure_boards_setup.py --plan   # preview sprints and seed data, no connection
+export AZDO_PAT=...                            # or leave unset to be prompted (input hidden)
+python3 scripts/azure_boards_setup.py
+```
+
+If your organisation doesn't allow switching a project's process through the API, the script prints the UI steps. Run it again after switching. `--reseed` moves the seeded items (tagged `seed:mywork-demo`) to the recycle bin and creates them again.
+

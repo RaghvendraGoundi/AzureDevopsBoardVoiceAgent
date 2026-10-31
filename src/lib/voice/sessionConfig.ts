@@ -18,7 +18,7 @@ const COMMON_REPLIES = [
   "I am done", "I'm done", "that's all", "yes", "yes, do it", "go ahead", "no", "cancel that", "never mind", "stop",
   "move it to closed", "the first one", "the second one",
 ];
-const DOMAIN_KEYWORDS = ["Azure DevOps", "work item", "user story", "bug", "task", "sprint", "priority", "backlog"];
+const DOMAIN_KEYWORDS = ["Azure DevOps", "Microsoft Entra ID", "work item", "user story", "bug", "task", "sprint", "priority", "backlog"];
 
 const TRANSCRIPTION_PROMPT =
   "A user talking to a voice assistant that manages Azure DevOps work items. " +

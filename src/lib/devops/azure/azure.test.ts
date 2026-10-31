@@ -9,6 +9,7 @@ import {
   CONNECTION_DATA,
   ITERATIONS,
   MEMBERS,
+  MYWORK_BACKLOG,
   SCRUM_BACKLOG,
   TEAM_FIELD_VALUES,
   TEAM_SETTINGS,
@@ -93,6 +94,22 @@ describe("process detection", () => {
     expect(resolveState(ctx, type, doneWord)).toBe(done);
     expect(resolveState(ctx, task, progressWord)).toBe(inProgress);
     expect(parentTypesFor(ctx, "Task")).toContain(type);
+  });
+
+  it("MyWork: understands Initiatives and the five-state workflow", async () => {
+    const { client } = fakeAdo({}, MYWORK_BACKLOG);
+    const ctx = await loadAdoContext(client);
+    expect(ctx.hierarchy.map((l) => l.defaultType)).toEqual(["Epic", "Initiative", "User Story", "Task"]);
+    expect(resolveType(ctx, "initiative")).toBe("Initiative");
+    expect(parentTypesFor(ctx, "User Story")).toEqual(["Initiative"]);
+    expect(parentTypesFor(ctx, "Task")).toEqual(["User Story", "Bug"]);
+    expect(resolveState(ctx, "Task", "done")).toBe("Completed");
+    expect(resolveState(ctx, "Task", "in progress")).toBe("In Progress");
+    expect(resolveState(ctx, "Task", "on hold")).toBe("On Hold");
+    expect(resolveState(ctx, "User Story", "review")).toBe("In Review");
+    expect(resolveState(ctx, "User Story", "ready for review")).toBe("In Review");
+    expect(resolveState(ctx, "User Story", "blocked")).toBe("On Hold");
+    expect(resolveState(ctx, "User Story", "resolved")).toBe("In Review");
   });
 
   it("still works when the member list is forbidden", async () => {

@@ -13,6 +13,7 @@ import {
   resolveSprint,
   resolveState,
   resolveType,
+  searchText,
   sprintNameFor,
   statesInCategories,
   validStates,
@@ -97,7 +98,7 @@ export const toolDefinitions = [
     type: "function",
     name: "list_work_items",
     description:
-      "Find work items. With no arguments: the user's open items in the current sprint. With search or parent_id, it looks across the whole board unless you narrow it. Results are numbered by position so the user can say 'the second one'.",
+      "Find work items. With no arguments: the user's open items in the current sprint. With search or parent_id, it looks across the whole board and every state unless you narrow it. Results are numbered by position so the user can say 'the second one'.",
     parameters: {
       type: "object",
       properties: {
@@ -382,7 +383,7 @@ async function listWorkItems(args: Args<"list_work_items">, { board }: ToolDeps)
       }
     }
     const types = args.type ? [typeFor(ctx, args.type)] : undefined;
-    const states = statesFor(ctx, args.state ?? "open", types);
+    const states = statesFor(ctx, args.state ?? (scoped ? "all" : "open"), types);
 
     const items = await board.query({
       assignee,
@@ -390,7 +391,7 @@ async function listWorkItems(args: Args<"list_work_items">, { board }: ToolDeps)
       types,
       states,
       parentId: args.parent_id,
-      text: args.search,
+      text: args.search ? searchText(args.search) : undefined,
       top: args.limit ?? 20,
     });
 
@@ -398,7 +399,7 @@ async function listWorkItems(args: Args<"list_work_items">, { board }: ToolDeps)
       assignee.kind === "me" ? "Your" : assignee.kind === "person" ? `${assignee.person.displayName}'s` : assignee.kind === "unassigned" ? "Unassigned" : "All";
     const what = types ? `${types[0].toLowerCase()} items` : "items";
     const title = [
-      `${who} ${args.state ?? "open"} ${what}`,
+      `${who} ${args.state ?? (scoped ? "" : "open")} ${what}`.replace(/\s+/g, " "),
       sprintLabel ? `· ${sprintLabel === "backlog" ? "backlog" : sprintLabel}` : "",
       args.parent_id ? `· under #${args.parent_id}` : "",
       args.search ? `· matching “${args.search}”` : "",
@@ -505,7 +506,9 @@ async function proposeCreate(args: Args<"propose_create_work_item">, { board, ac
     }
 
     // Tasks follow their parent's sprint; requirements and bugs go in the current sprint; portfolio items stay on the backlog.
-    const parentSprint = parent && sprintNameFor(ctx, parent.iterationPath) ? parent.iterationPath : null;
+    // ...but never into a sprint that has already finished.
+    const parentSprint =
+      parent && ctx.sprints.some((s) => s.path === parent.iterationPath && s.timeFrame !== "past") ? parent.iterationPath : null;
     const iterationPath = args.sprint
       ? sprintPath(ctx, args.sprint)
       : level?.kind === "portfolio"
