@@ -117,7 +117,8 @@ export async function loadAdoContext(client: AdoClient): Promise<BoardContext> {
     project,
     team,
     defaultArea: fields.defaultValue ?? project,
-    backlogIteration: settings.backlogIteration ? toItemPath(settings.backlogIteration.path ?? settings.backlogIteration.name) : project,
+    // For a project-root backlog iteration Azure DevOps returns path "" and the real name in `name`.
+    backlogIteration: toItemPath(settings.backlogIteration?.path || settings.backlogIteration?.name || project),
     hierarchy: buildHierarchy(backlog),
     bugsBehavior: settings.bugsBehavior ?? "asRequirements",
     bugTypes: backlog.bugWorkItems?.workItemTypes.map((t) => t.name) ?? [],

@@ -112,6 +112,16 @@ describe("process detection", () => {
     expect(resolveState(ctx, "User Story", "resolved")).toBe("In Review");
   });
 
+  it("uses the backlog iteration's name when Azure DevOps returns an empty path for it", async () => {
+    // What MyWork's team settings actually return for a project-root backlog iteration.
+    const { client } = fakeAdo({
+      "GET /Fabrikam/Fabrikam%20Team/_apis/work/teamsettings": () => ({ ...TEAM_SETTINGS, backlogIteration: { name: "Fabrikam", path: "" } }),
+    });
+    const ctx = await loadAdoContext(client);
+    expect(ctx.backlogIteration).toBe("Fabrikam");
+    expect(buildWiql({ iteration: "backlog" }, ctx)).toContain("[System.IterationPath] = 'Fabrikam'");
+  });
+
   it("still works when the member list is forbidden", async () => {
     const { client } = fakeAdo({ "GET /_apis/projects/Fabrikam/teams/Fabrikam%20Team/members": () => new Response("{}", { status: 403 }) });
     expect((await loadAdoContext(client)).members).toEqual([]);
