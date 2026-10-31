@@ -8,6 +8,7 @@ describe("ConversationStore", () => {
   it("keeps each user's conversations separate", async () => {
     const store = new ConversationStore(memoryConversations());
     const a = await store.create("alice");
+    await store.append("alice", a.id, { turns: [turn("t1", "user", "Hi", 1)] });
     await store.create("bob");
     expect((await store.list("alice")).map((c) => c.id)).toEqual([a.id]);
     expect(await store.get("bob", a.id)).toBeNull();
@@ -27,8 +28,9 @@ describe("ConversationStore", () => {
     const c = (await store.get("u", first.id))!;
     expect(c.turns.map((t) => t.id)).toEqual(["t1", "t2"]);
     expect(c.title).toBe("What am I working on this sprint");
-    expect((await store.list("u")).map((x) => x.id)).toEqual([first.id, second.id]);
-    expect((await store.list("u"))[1].title).toBe(DEFAULT_TITLE);
+    // The second has no messages yet, so it isn't listed.
+    expect((await store.list("u")).map((x) => x.id)).toEqual([first.id]);
+    expect((await store.get("u", second.id))?.title).toBe(DEFAULT_TITLE);
   });
 
   it("serialises concurrent saves so no turn is lost", async () => {

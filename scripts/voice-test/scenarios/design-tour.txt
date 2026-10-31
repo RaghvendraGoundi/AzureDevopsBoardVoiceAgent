@@ -1,0 +1,8 @@
+# Walks the UI through its main states for screenshots, without changing the board:
+# results list, a pending confirmation, a cancelled change, the closing popups.
+# Run with { pause: true } to stop after each step (see README).
+@voice Samantha
+What am I working on this sprint?
+Mark the second one as blocked.
+No, cancel that.
+I am done, close it for now.

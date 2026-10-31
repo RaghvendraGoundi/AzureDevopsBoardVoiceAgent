@@ -6,6 +6,7 @@
  *   const { run } = await import("/__voice_test/harness.js");
  *   const report = await run("board-tour");                  // engine selected on screen
  *   const report = await run("board-tour", { engine: "live" });
+ *   run("design-tour", { pause: true });  // stops after each step; call window.__voiceTestResume() to go on
  *
  * How it works:
  * - The microphone is replaced: getUserMedia returns a Web Audio stream the
@@ -167,6 +168,13 @@ export async function run(name, opts = {}) {
         }, 60000, 250);
       }
       flushLive();
+
+      if (opts.pause && i < manifest.steps.length - 1) {
+        // Hold here (e.g. for a screenshot) until window.__voiceTestResume() is called.
+        window.__voiceTestPaused = { step: i + 1, said: step.said };
+        await new Promise((resume) => (window.__voiceTestResume = resume));
+        window.__voiceTestPaused = null;
+      }
 
       const mine = events.slice(from);
       const firstReply = mine.find(([t, k]) => k === "reply_audio" && t >= spokeAt);

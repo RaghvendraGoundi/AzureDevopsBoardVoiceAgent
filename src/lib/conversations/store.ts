@@ -78,9 +78,10 @@ export class ConversationStore {
     return run;
   }
 
+  /** Conversations with at least one message, newest first (a call that never got going leaves an empty one). */
   async list(userKey: string): Promise<ConversationSummary[]> {
     const all = await this.files.load(userKey);
-    return all.sort((a, b) => b.updatedAt - a.updatedAt).map(summarize);
+    return all.filter((c) => c.turns.length > 0).sort((a, b) => b.updatedAt - a.updatedAt).map(summarize);
   }
 
   async get(userKey: string, id: string): Promise<Conversation | null> {

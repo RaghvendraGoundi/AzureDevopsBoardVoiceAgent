@@ -19,6 +19,7 @@ const { run } = await import("/__voice_test/harness.js");
 await run("board-tour");                     // the model selected on screen
 await run("board-tour", { engine: "live" }); // or "realtime"
 await run("turn-taking", { verbose: true }); // also logs every event as it happens
+run("design-tour", { pause: true });         // stops after each step; window.__voiceTestResume() goes on
 ```
 
 Leave the page alone while it runs (a click can switch the model or end the
@@ -36,7 +37,20 @@ On the emulator, `npm run board:reset` undoes them.
 | `board-tour` | My sprint work, a state filter, an item's hierarchy, creating a task under a story, moving it to the next sprint |
 | `turn-taking` | A mid-sentence pause stays one turn, a cough gets no reply, talking over the assistant stops it, "I am done" hangs up |
 | `confirm-and-cancel` | "No" writes nothing; a clear "yes" writes once |
+| `design-tour` | Results, a pending confirmation, a cancelled change and the closing popups, for screenshots (with `pause: true`); writes nothing |
 | `conversation-start`, then `conversation-resume` | A conversation is saved and named; a new call in it remembers "the second one you mentioned"; the closing and "Session ended" popups |
+
+## Screenshots for design reviews
+
+```bash
+npm run design:capture        # app running on :3000; writes .data/screenshots/*.png
+```
+
+`capture.mjs` drives headless Chrome (a throwaway profile) through `design-tour`
+with the harness paused at each step, then the board and the phone layout,
+and saves 12 full-resolution screenshots (2× desktop at 1440×900, 3× phone at
+390×844) plus `shots.json` describing each. It uses the real voice service and
+board, writes nothing to the board, and the call is saved as a conversation.
 
 ## How the tests are made
 
