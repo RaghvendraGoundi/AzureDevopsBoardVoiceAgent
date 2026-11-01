@@ -3,15 +3,13 @@
 import { useState } from "react";
 import type { WorkItem } from "@/lib/devops/types";
 import type { PendingAction } from "@/types/voice";
-import { TypeIcon } from "./icons";
+import { CheckIcon, CloseIcon, TypeIcon } from "./icons";
 import { StateBadge } from "./WorkItemCard";
 
 type Field = { key: string; label: string; value: (i: WorkItem) => string };
 
 const FIELDS: Field[] = [
-  { key: "title", label: "Title", value: (i) => i.title },
   { key: "type", label: "Type", value: (i) => i.type },
-  { key: "state", label: "State", value: (i) => i.state },
   { key: "parent", label: "Parent", value: (i) => (i.parentId ? `#${i.parentId} ${i.parentTitle ?? ""}`.trim() : "None") },
   { key: "sprint", label: "Sprint", value: (i) => i.sprintName ?? "Backlog" },
   { key: "assignedTo", label: "Assigned to", value: (i) => i.assignedTo?.displayName ?? "Unassigned" },
@@ -19,21 +17,16 @@ const FIELDS: Field[] = [
   { key: "tags", label: "Tags", value: (i) => i.tags.join(", ") || "None" },
 ];
 
-function show(item: WorkItem, field: Field) {
-  if (field.key === "state") return <StateBadge state={item.state} category={item.stateCategory} />;
-  return <span>{field.value(item)}</span>;
-}
-
 interface Props {
   action: PendingAction;
   onResolve: (actionId: string, decision: "confirm" | "cancel") => Promise<void>;
 }
 
-/** A proposed change, shown until the user says yes or no (or taps a button). */
+/** A proposed change, shown until the user says yes or no (or taps a button). Layout from variant B. */
 export function ConfirmationCard({ action, onResolve }: Props) {
   const [busy, setBusy] = useState<"confirm" | "cancel" | null>(null);
   const { before, after } = action;
-  const isUpdate = action.kind === "update" && before;
+  const isUpdate = action.kind === "update" && !!before;
 
   async function resolve(decision: "confirm" | "cancel") {
     setBusy(decision);
@@ -44,66 +37,74 @@ export function ConfirmationCard({ action, onResolve }: Props) {
     }
   }
 
-  const rows = isUpdate
-    ? FIELDS.filter((f) => f.key !== "title" && f.value(before) !== f.value(after))
-    : FIELDS.filter((f) => f.key !== "title" && (f.key !== "tags" || after.tags.length > 0));
+  const stateChanged = isUpdate && before.state !== after.state;
   const renamed = isUpdate && before.title !== after.title;
+  const rows = isUpdate
+    ? FIELDS.filter((f) => f.value(before) !== f.value(after))
+    : FIELDS.filter((f) => f.key !== "tags" || after.tags.length > 0);
 
   return (
-    <section className="card att animate-rise" aria-label="Change waiting for your confirmation">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-sm font-bold text-accent">{isUpdate ? "Waiting for your yes" : "New item, waiting for your yes"}</span>
+    <section className="card att animate-rise p-5!" aria-label="Change waiting for your confirmation">
+      <div className="flex items-center justify-between">
+        <span className="att-label">
+          <i aria-hidden />
+          {isUpdate ? "Waiting for your yes" : "New item · waiting for your yes"}
+        </span>
         <span className="sub2">Voice or tap</span>
       </div>
 
-      <div className="meta mt-3">
+      <div className="meta mt-4">
         <span className="tg">
           <TypeIcon type={after.type} />
           {after.type}
         </span>
         {isUpdate && <span>#{after.id}</span>}
       </div>
-      <h3 className="ttl">{renamed ? before.title : after.title}</h3>
+      <h3 className="ttl mt-2! mb-4! text-[20px]!">{renamed ? before.title : after.title}</h3>
 
-      <dl className="mt-3 flex flex-col gap-2">
-        {renamed && (
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <dt className="w-24 shrink-0 sub2">Title</dt>
-            <dd>
-              → <span className="font-semibold">{after.title}</span>
-            </dd>
-          </div>
-        )}
-        {rows.map((f) => (
-          <div key={f.key} className="flex flex-wrap items-center gap-2 text-sm">
-            <dt className="w-24 shrink-0 sub2">{f.label}</dt>
-            <dd className="flex flex-wrap items-center gap-2">
-              {isUpdate && (
-                <>
-                  <span className="text-muted">{show(before, f)}</span>
-                  <span className="text-muted" aria-label="changes to">
-                    →
-                  </span>
-                </>
-              )}
-              <span className="font-semibold">{show(after, f)}</span>
-            </dd>
-          </div>
-        ))}
-      </dl>
-
-      {action.kind === "update" && action.changes?.comment && (
-        <p className="mt-3 text-sm">
-          <span className="sub2">Note to add: </span>“{action.changes.comment}”
-        </p>
+      {stateChanged && (
+        <div className="mb-3.5 flex items-center gap-3">
+          <span className="state big" data-cat={before.stateCategory}>
+            <i aria-hidden />
+            {before.state}
+          </span>
+          <span className="h-0 flex-1 border-t-2 border-dashed border-[rgba(255,86,0,0.55)]" aria-label="changes to" />
+          <StateBadge state={after.state} category={after.stateCategory} big />
+        </div>
       )}
 
-      <p className="sub2 mt-4">Nothing changes on the board until you confirm.</p>
-      <div className="mt-3 flex justify-end gap-2">
-        <button onClick={() => resolve("cancel")} disabled={busy !== null} className="pill">
+      {(renamed || rows.length > 0) && (
+        <dl className="mb-3 flex flex-col gap-1.5 text-sm">
+          {renamed && (
+            <div className="flex gap-2">
+              <dt className="sub2 w-24 shrink-0">Title</dt>
+              <dd>→ {after.title}</dd>
+            </div>
+          )}
+          {rows.map((f) => (
+            <div key={f.key} className="flex gap-2">
+              <dt className="sub2 w-24 shrink-0">{f.label}</dt>
+              <dd>
+                {isUpdate && <span className="text-muted">{f.value(before)} → </span>}
+                {f.value(after)}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      {action.kind === "update" && action.changes?.comment && (
+        <p className="sub2 mb-1.5">Note to add: “{action.changes.comment}”</p>
+      )}
+      <p className="sub2 mb-4">Nothing changes on the board until you confirm.</p>
+
+      <div className="flex gap-3">
+        <button onClick={() => resolve("cancel")} disabled={busy !== null} className="pill lg flex-1">
+          <CloseIcon size={20} />
           Cancel
         </button>
-        <button onClick={() => resolve("confirm")} disabled={busy !== null} className="pill pri">
+        <button onClick={() => resolve("confirm")} disabled={busy !== null} className="pill pri lg flex-[1.4]">
+          <CheckIcon size={20} />
           {busy === "confirm" ? "Saving…" : "Confirm"}
         </button>
       </div>

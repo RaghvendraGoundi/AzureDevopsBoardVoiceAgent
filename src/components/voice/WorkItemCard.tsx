@@ -4,9 +4,9 @@ import { TypeIcon } from "./icons";
 /** States that mean "stuck", shown in the attention colour whatever the process calls them. */
 const HOLD = /hold|block|wait|paus|imped/i;
 
-export function StateBadge({ state, category }: { state: string; category: StateCategory }) {
+export function StateBadge({ state, category, big }: { state: string; category: StateCategory; big?: boolean }) {
   return (
-    <span className={`state${HOLD.test(state) ? " hold" : ""}`} data-cat={category}>
+    <span className={`state${HOLD.test(state) ? " hold" : ""}${big ? " big" : ""}`} data-cat={category}>
       <i aria-hidden />
       {state}
     </span>

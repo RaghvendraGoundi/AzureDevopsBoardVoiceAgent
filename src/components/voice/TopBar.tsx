@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { VoiceEngine } from "@/hooks/voice/useVoiceSession";
 import type { InputMode } from "@/lib/voice/realtimeClient";
 import type { ConnectionState } from "@/types/voice";
-import { BoardIcon, SettingsIcon } from "./icons";
+import { BoardIcon, LogoMark, SettingsIcon } from "./icons";
 
 interface Props {
   connection: ConnectionState;
@@ -52,11 +52,9 @@ export function TopBar(p: Props) {
   return (
     <header className="relative z-20 flex h-16 items-center gap-3 px-4 sm:gap-4 sm:px-6">
       <div className="flex items-center gap-2.5">
-        <span className="grid size-7 place-items-center rounded-full border border-voice/50 bg-voice/10" aria-hidden>
-          <span className="size-2.5 rounded-full bg-voice shadow-[0_0_10px_var(--color-voice)]" />
-        </span>
-        <span className="text-[17px] font-bold tracking-tight">
-          DevOps<span className="text-accent">Voice</span>
+        <LogoMark />
+        <span className="disp logotxt text-[17px] font-bold tracking-[-0.01em]">
+          DevOps<span> Voice</span>
         </span>
       </div>
       <div className="flex-1" />

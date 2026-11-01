@@ -7,6 +7,7 @@ import { CallDock } from "./CallDock";
 import { CallStage } from "./CallStage";
 import { ChatPanel } from "./ChatPanel";
 import { ChatIcon, WorkspaceIcon } from "./icons";
+import { STARS_SHADOW } from "./orbMarkup";
 import { SessionDialog } from "./SessionDialog";
 import { TopBar } from "./TopBar";
 import { WorkspacePanel } from "./WorkspacePanel";
@@ -35,6 +36,7 @@ export function VoiceWorkspace() {
   const [chatOpen, setChatOpen] = useState(false);
   const [workOpen, setWorkOpen] = useState(false);
   const [captions, setCaptions] = useState(true);
+  const [focusChat, setFocusChat] = useState(0);
   const live = state.connection === "connected" || s.demoRunning;
   const locked = live || state.connection === "connecting";
   const currentTitle = c.conversations.find((x) => x.id === c.currentId)?.title ?? null;
@@ -56,18 +58,6 @@ export function VoiceWorkspace() {
     setWorkOpen(true);
     if (!wide) setChatOpen(false);
   };
-
-  const yourCall = live && !!state.pending && (state.status === "listening" || state.status === "idle");
-  const tone =
-    state.status === "error" || state.connection === "failed"
-      ? "error"
-      : yourCall
-        ? "signal"
-        : state.status === "processing"
-          ? "think"
-          : live && (state.status === "listening" || state.status === "speaking")
-            ? "voice"
-            : undefined;
 
   const messageCount = state.transcript.filter((e) => e.text.trim()).length;
   const resultCount = state.results?.items.length ?? 0;
@@ -92,6 +82,7 @@ export function VoiceWorkspace() {
       }}
       onDelete={(id) => void c.remove(id)}
       onSend={s.sendText}
+      focusKey={focusChat}
     />
   );
   const work = (variant: "panel" | "sheet") => (
@@ -105,10 +96,12 @@ export function VoiceWorkspace() {
   );
 
   return (
-    <div className="scene flex h-dvh flex-col" data-tone={tone}>
-      <div className="scene-bg" />
-      <div className="scene-floor" />
-      <div className="scene-vig" />
+    <div className="scene flex h-dvh flex-col">
+      <div className="bg" />
+      <div className="stars" style={{ boxShadow: STARS_SHADOW }} aria-hidden />
+      <div className="floor" aria-hidden />
+      <div className="vig" aria-hidden />
+      <div className="scan" aria-hidden />
       <AgentStatus status={state.status} activeTool={state.activeTool} />
 
       <div className="relative z-10 flex h-full min-h-0 flex-col">
@@ -165,12 +158,14 @@ export function VoiceWorkspace() {
             </button>
           )}
 
+          {/* As in the design, the orb stays centred and panels slide over the scene; only
+              narrower screens make room for open panels. */}
           <main
-            className={`flex min-w-0 flex-1 flex-col items-center transition-[padding] duration-500 ${
-              wide && chatOpen ? "pl-[calc(min(400px,30vw)+40px)]" : "pl-14"
-            } ${wide && workOpen ? "pr-[calc(min(440px,34vw)+40px)]" : "pr-14"}`}
+            className={`flex min-w-0 flex-1 flex-col items-center px-14 transition-[padding] duration-500 ${
+              wide && chatOpen ? "max-[1359px]:pl-[calc(min(400px,30vw)+40px)]" : ""
+            } ${wide && workOpen ? "max-[1359px]:pr-[calc(min(440px,34vw)+40px)]" : ""}`}
           >
-            <div className="@container flex min-h-0 w-full flex-1 flex-col items-center justify-center [container-type:inline-size]">
+            <div className="@container flex min-h-0 w-full flex-1 flex-col items-center pt-3.5 [container-type:inline-size]">
               <CallStage
                 state={state}
                 mode={s.mode}
@@ -179,30 +174,35 @@ export function VoiceWorkspace() {
                 captions={captions}
                 demoRunning={s.demoRunning}
                 levels={s.levels}
+                narrowCaptions={wide && (chatOpen || workOpen)}
                 onOrb={() => (live ? s.interrupt() : !locked && void s.start())}
               />
             </div>
-            <div className="pt-2 pb-6">
+            {(live || state.connection === "connecting") && (
+            <div className="flex w-full justify-center pt-2 pb-5">
               <CallDock
                 connection={state.connection}
                 status={state.status}
                 mode={s.mode}
                 talking={s.talking}
                 muted={s.muted}
-                outputMuted={s.outputMuted}
                 captions={captions}
                 demoRunning={s.demoRunning}
                 onStart={s.start}
                 onStop={s.stop}
                 onToggleMute={s.toggleMute}
-                onToggleOutput={s.toggleOutputMute}
                 onToggleCaptions={() => setCaptions((v) => !v)}
                 onInterrupt={s.interrupt}
+                onType={() => {
+                  openChat();
+                  setFocusChat((n) => n + 1);
+                }}
                 onTalkStart={s.pttStart}
                 onTalkEnd={s.pttEnd}
                 onStopDemo={s.stopDemo}
               />
             </div>
+            )}
           </main>
         </div>
       </div>

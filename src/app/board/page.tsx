@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import Link from "next/link";
-import { TypeIcon } from "@/components/voice/icons";
+import { LogoMark, TypeIcon } from "@/components/voice/icons";
 import { StateBadge } from "@/components/voice/WorkItemCard";
 import { loadSprintBoard } from "@/lib/devops/sprintBoard";
 
@@ -11,13 +11,14 @@ export default async function BoardPage() {
 
   return (
     <div className="scene min-h-dvh">
-      <div className="scene-bg" />
-      <div className="scene-vig" />
+      <div className="bg" />
+      <div className="vig" />
       <div className="relative z-10">
         <header className="flex h-16 items-center justify-between gap-4 px-4 sm:px-6">
-          <div className="min-w-0">
-            <span className="text-[17px] font-bold tracking-tight">
-              DevOps<span className="text-accent">Voice</span>
+          <div className="flex min-w-0 items-center gap-2.5">
+            <LogoMark />
+            <span className="disp logotxt text-[17px] font-bold tracking-[-0.01em]">
+              DevOps<span> Voice</span>
             </span>
             {board.ok && <span className="sub2 ml-3 hidden sm:inline">{board.subtitle}</span>}
           </div>

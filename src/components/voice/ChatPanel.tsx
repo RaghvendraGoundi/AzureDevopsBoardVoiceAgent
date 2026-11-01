@@ -21,6 +21,8 @@ interface Props {
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
   onSend: (text: string) => void;
+  /** Changes when the message box should take focus. */
+  focusKey?: number;
 }
 
 /** The conversation as a thread, a box to type into it, and the list of saved conversations. */
@@ -29,6 +31,14 @@ export function ChatPanel(p: Props) {
   const [draft, setDraft] = useState("");
   const [confirming, setConfirming] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // "Type instead" in the dock opens the chat with the cursor in the box.
+  useEffect(() => {
+    if (!p.focusKey) return;
+    setHistory(false);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [p.focusKey]);
   const current = p.conversations.find((c) => c.id === p.currentId);
   const messages = p.transcript.filter((e) => e.text.trim() || !e.final);
 
@@ -126,7 +136,7 @@ export function ChatPanel(p: Props) {
           {messages.map((m) => (
             <li key={m.id} className={`msg animate-rise ${m.role === "user" ? "you" : ""}`}>
               <span className="who">
-                <span className="size-2 rounded-full bg-voice" aria-hidden />
+                <span className="orbdot" aria-hidden />
                 DevOps Voice
               </span>
               <div className="bub">
@@ -146,7 +156,8 @@ export function ChatPanel(p: Props) {
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder={p.canType ? "Type a message" : "Typing works with the Realtime model"}
+              ref={inputRef}
+              placeholder={p.canType ? "Type instead of speaking" : "Typing works with the Realtime model"}
               disabled={!p.canType}
             />
             <button type="submit" className="ibtn" aria-label="Send" disabled={!p.canType || !draft.trim()}>

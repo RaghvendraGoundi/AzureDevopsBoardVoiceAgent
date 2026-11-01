@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { TranscriptEntry, WorkspaceState } from "@/hooks/voice/workspaceReducer";
 import type { InputMode } from "@/lib/voice/realtimeClient";
-import { VoiceOrb } from "./VoiceOrb";
+import { orbStateFor, VoiceOrb } from "./VoiceOrb";
 
 interface Props {
   state: WorkspaceState;
@@ -13,6 +13,8 @@ interface Props {
   captions: boolean;
   demoRunning: boolean;
   levels: () => { input: number; output: number };
+  /** A side panel is open: keep captions clear of it. */
+  narrowCaptions?: boolean;
   /** Tapping the orb: start a call when idle, interrupt while it speaks. */
   onOrb: () => void;
 }
@@ -51,7 +53,7 @@ function lastExchange(transcript: TranscriptEntry[]) {
 }
 
 /** The middle of the screen: when and how the assistant is, the orb, and live captions. */
-export function CallStage({ state, mode, talking, muted, captions, demoRunning, levels, onOrb }: Props) {
+export function CallStage({ state, mode, talking, muted, captions, demoRunning, levels, narrowCaptions, onOrb }: Props) {
   const [now, setNow] = useState(() => Date.now());
   const live = state.connection === "connected" || demoRunning;
   const { status, pending, activeTool, boardInfo } = state;
@@ -63,9 +65,10 @@ export function CallStage({ state, mode, talking, muted, captions, demoRunning, 
   }, [state.sessionStartedAt]);
 
   const yourCall = live && !!pending && (status === "listening" || status === "idle");
+  const idle = !live && state.connection !== "connecting" && status !== "error" && state.connection !== "failed";
   let word = "Ready";
-  let ind: "l" | "s" | "t" | "i" | null = "i";
-  let sub = "Tap the orb to start talking.";
+  let ind: "l" | "s" | "t" | "i" | "c" | null = "i";
+  let sub = "Tap the orb, or just start talking.";
   if (state.connection === "connecting") {
     word = "Connecting";
     ind = "t";
@@ -76,7 +79,7 @@ export function CallStage({ state, mode, talking, muted, captions, demoRunning, 
     sub = state.connectionError ?? "Tap the orb to try again.";
   } else if (yourCall) {
     word = "Your call";
-    ind = "i";
+    ind = "l";
     sub = "Say yes, or use the buttons";
   } else if (status === "speaking") {
     word = "Speaking";
@@ -100,7 +103,7 @@ export function CallStage({ state, mode, talking, muted, captions, demoRunning, 
   return (
     <div className="flex w-full flex-col items-center text-center">
       <p className="lab mb-1">{label}</p>
-      <h1 className="serif text-[clamp(34px,5vh,46px)] leading-[1.05]">
+      <h1 className="serif text-[clamp(34px,5.2vh,46px)] leading-[1.05]">
         {ind && (
           <span className={`ind ${ind}`} aria-hidden>
             <i />
@@ -112,31 +115,30 @@ export function CallStage({ state, mode, talking, muted, captions, demoRunning, 
         )}
         {word}
       </h1>
-      {!live && state.connection !== "connecting" && status !== "error" && (
-        <p className="mt-1.5 text-[15px] text-[#c9d6e4]">{greeting(boardInfo?.user)}</p>
-      )}
-      <p className="mt-1 text-[15px] text-[#8ea6bf]">{sub}</p>
+      {/* Before a call: the greeting here, and the hint under the orb (as designed). */}
+      <p className="mt-1.5 text-[15px] text-[#8ea6bf]">{idle ? greeting(boardInfo?.user) : sub}</p>
 
       <button
-        className="orb-btn my-[clamp(8px,2vh,24px)]"
+        className="orbbtn my-[clamp(4px,1.5vh,20px)] w-[min(440px,46vh,82cqw)]"
         onClick={onOrb}
         aria-label={live ? (status === "speaking" ? "Interrupt the assistant" : "Assistant") : "Start voice session"}
-        style={{ ["--orb" as string]: "min(440px, 42vh, 78cqw)" }}
       >
-        <VoiceOrb status={state.connection === "connecting" ? "connecting" : status} levels={levels} />
+        <VoiceOrb state={orbStateFor(state.connection === "connecting" ? "connecting" : status, yourCall)} levels={levels} />
       </button>
 
+      {idle && <p className="mt-2 text-[15px] text-[#8fb0c8]">{sub}</p>}
+
       {captions && live && (you || them) && (
-        <div className="max-w-[580px] px-4" aria-live="off">
+        <div className={`px-4 ${narrowCaptions ? "max-w-[min(580px,calc(100vw-1000px))] min-[1360px]:max-w-[min(580px,calc(100vw-960px))]" : "max-w-[580px]"}`} aria-live="off">
           {you && (
             <p className="caph mb-1.5 line-clamp-2">
-              <span className="capwho text-[#8fb0c8]!">You</span>&nbsp; {you.text || "…"}
+              <span className="capwho text-[#8fb0c8]!">YOU</span>&nbsp; {you.text || "…"}
             </p>
           )}
           {them && (
             <>
-              <p className="capwho mb-1">DevOps Voice</p>
-              <p className="capl line-clamp-3">
+              <p className="capwho mb-1">DEVOPS VOICE</p>
+              <p className="capl line-clamp-2">
                 {highlight(them.text)}
                 {!them.final && <span className="cur" aria-hidden />}
               </p>
