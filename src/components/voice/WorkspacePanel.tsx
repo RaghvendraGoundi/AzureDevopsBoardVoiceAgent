@@ -10,6 +10,8 @@ interface Props {
   state: WorkspaceState;
   /** "panel": desktop side panel; "sheet": phone bottom sheet. */
   variant: "panel" | "sheet";
+  /** The assistant is working on the board: show the live signal line. */
+  busy?: boolean;
   onClose: () => void;
   onResolve: (actionId: string, decision: "confirm" | "cancel") => Promise<void>;
   onDismissError: (id: number) => void;
@@ -18,7 +20,7 @@ interface Props {
 type Tab = "results" | "changes";
 
 /** What the assistant found and changed: results, the change waiting for a yes, and session activity. */
-export function WorkspacePanel({ state, variant, onClose, onResolve, onDismissError }: Props) {
+export function WorkspacePanel({ state, variant, busy, onClose, onResolve, onDismissError }: Props) {
   const { results, pending, activity, errors, activeTool, focusedId, flash, boardInfo } = state;
   const [tab, setTab] = useState<Tab>("results");
   const loading = activeTool !== null && !pending;
@@ -47,6 +49,7 @@ export function WorkspacePanel({ state, variant, onClose, onResolve, onDismissEr
         </button>
       </div>
 
+      {busy && <div className="live-line" aria-hidden />}
       <div className="tabs" role="tablist" aria-label="Workspace">
         <button role="tab" aria-selected={tab === "results"} onClick={() => setTab("results")}>
           Results<span className="ct">{results?.items.length ?? 0}</span>
@@ -94,21 +97,22 @@ export function WorkspacePanel({ state, variant, onClose, onResolve, onDismissEr
         ) : activity.length === 0 ? (
           <p className="sub2 px-1 py-6 text-center">Changes you confirm in this conversation show up here.</p>
         ) : (
-          <ul className="flex flex-col gap-2.5">
+          <ol className="timeline">
             {activity.map((a) => (
               <li key={a.id} className="card animate-rise py-3!">
+                <span className={`tl-node ${a.kind}`} aria-hidden />
                 <div className="meta">
-                  <span className={a.kind === "cancelled" ? "text-muted" : a.kind === "created" ? "text-voice" : "text-accent"}>
-                    {a.kind === "created" ? "Created" : a.kind === "updated" ? "Updated" : "Cancelled"}
+                  <span className={a.kind === "cancelled" ? "text-muted" : a.kind === "created" ? "text-voice" : "text-[#ff7a33]"}>
+                    {a.kind === "created" ? "CREATED" : a.kind === "updated" ? "UPDATED" : "CANCELLED"}
                   </span>
                   {a.item.id ? <span>#{a.item.id}</span> : null}
                   <span className="ml-auto">{new Date(a.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
                 </div>
                 <p className="ttl text-[15px]!">{a.item.title}</p>
                 {a.kind === "updated" && a.before && a.before.state !== a.item.state && (
-                  <p className="mt-1 flex items-center gap-2">
+                  <p className="mt-1.5 flex items-center gap-2">
                     <StateBadge state={a.before.state} category={a.before.stateCategory} />
-                    <span className="text-muted">→</span>
+                    <span className="flowline sm" aria-label="to" />
                     <StateBadge state={a.item.state} category={a.item.stateCategory} />
                   </p>
                 )}
@@ -117,9 +121,15 @@ export function WorkspacePanel({ state, variant, onClose, onResolve, onDismissEr
                     {a.before.sprintName ?? "Backlog"} → {a.item.sprintName ?? "Backlog"}
                   </p>
                 )}
+                {a.kind === "created" && (
+                  <p className="sub2 mt-0.5">
+                    {a.item.type} · {a.item.sprintName ?? "Backlog"}
+                    {a.item.parentId ? ` · under #${a.item.parentId}` : ""}
+                  </p>
+                )}
               </li>
             ))}
-          </ul>
+          </ol>
         )}
       </div>
     </div>

@@ -23,6 +23,8 @@ interface Props {
   onSend: (text: string) => void;
   /** Changes when the message box should take focus. */
   focusKey?: number;
+  /** A call is live: show the live signal line under the header. */
+  live?: boolean;
 }
 
 /** The conversation as a thread, a box to type into it, and the list of saved conversations. */
@@ -79,6 +81,7 @@ export function ChatPanel(p: Props) {
         </button>
       </div>
 
+      {p.live && !history && <div className="live-line" aria-hidden />}
       {history ? (
         <nav aria-label="Conversations" className="min-h-0 flex-1 overflow-y-auto border-t border-line px-3 py-3">
           {p.locked && <p className="sub2 px-2 pb-2">End the call to switch conversations.</p>}
@@ -134,7 +137,7 @@ export function ChatPanel(p: Props) {
             </li>
           )}
           {messages.map((m) => (
-            <li key={m.id} className={`msg animate-rise ${m.role === "user" ? "you" : ""}`}>
+            <li key={m.id} className={`msg ${m.role === "user" ? "you" : ""}`}>
               <span className="who">
                 <span className="orbdot" aria-hidden />
                 DevOps Voice

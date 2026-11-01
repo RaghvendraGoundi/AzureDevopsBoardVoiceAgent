@@ -22,7 +22,9 @@ interface Props {
 
 export function WorkItemCard({ item, position, focused, flash }: Props) {
   return (
-    <article className={`card animate-rise ${focused ? "focus" : ""} ${flash ? "animate-flash" : ""}`}>
+    <article
+      className={`card ${flash === "created" ? "materialize" : flash === "updated" ? "card-updated" : "animate-rise"} ${focused ? "focus" : ""}`}
+    >
       <div className="meta">
         {position !== undefined && <span className="text-fg/70">{position}.</span>}
         <span className="tg">
@@ -30,7 +32,8 @@ export function WorkItemCard({ item, position, focused, flash }: Props) {
           {item.type}
         </span>
         <span>#{item.id}</span>
-        <span className="ml-auto">
+        {/* Keyed by state so a status change re-runs the pop-in. */}
+        <span key={item.state} className={`ml-auto ${flash === "updated" ? "pill-in" : ""}`}>
           <StateBadge state={item.state} category={item.stateCategory} />
         </span>
       </div>
@@ -52,7 +55,11 @@ export function WorkItemCard({ item, position, focused, flash }: Props) {
         {item.sprintName ?? "Backlog"} · {item.assignedTo?.displayName ?? "Unassigned"}
         {item.priority !== null && ` · P${item.priority}`}
       </p>
-      {flash && <p className="mt-2 text-xs font-semibold text-voice">{flash === "created" ? "✓ Created" : "✓ Updated"}</p>}
+      {flash && (
+        <p className="mono mt-2 text-[11px] font-semibold tracking-[0.08em] text-voice animate-rise">
+          {flash === "created" ? "✓ CREATED" : "✓ UPDATED"}
+        </p>
+      )}
     </article>
   );
 }

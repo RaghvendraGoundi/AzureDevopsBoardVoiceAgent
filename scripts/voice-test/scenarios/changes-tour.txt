@@ -1,0 +1,8 @@
+# Creates a task under a story and moves it to the next sprint, for the create/move animations.
+# Written for the emulated board (npm run board:reset to undo).
+@voice Samantha
+What am I working on this sprint?
+Create a task to add audit logging under the authentication story.
+Yes, create it.
+Move it to the next sprint.
+Yes.

@@ -5,9 +5,10 @@ import { useVoiceSession } from "@/hooks/voice/useVoiceSession";
 import { AgentStatus } from "./AgentStatus";
 import { CallDock } from "./CallDock";
 import { CallStage } from "./CallStage";
+import { ChangeToast } from "./ChangeToast";
 import { ChatPanel } from "./ChatPanel";
 import { ChatIcon, WorkspaceIcon } from "./icons";
-import { STARS_SHADOW } from "./orbMarkup";
+import { STARS_SHADOW } from "./sceneStars";
 import { SessionDialog } from "./SessionDialog";
 import { TopBar } from "./TopBar";
 import { WorkspacePanel } from "./WorkspacePanel";
@@ -83,12 +84,14 @@ export function VoiceWorkspace() {
       onDelete={(id) => void c.remove(id)}
       onSend={s.sendText}
       focusKey={focusChat}
+      live={live}
     />
   );
   const work = (variant: "panel" | "sheet") => (
     <WorkspacePanel
       variant={variant}
       state={state}
+      busy={state.activeTool !== null}
       onClose={() => setWorkOpen(false)}
       onResolve={s.resolvePending}
       onDismissError={s.dismissError}
@@ -124,21 +127,23 @@ export function VoiceWorkspace() {
                 aria-label="Chat"
                 aria-hidden={!chatOpen}
                 inert={!chatOpen}
-                className={`panel absolute top-2 bottom-5 left-5 z-10 w-[min(400px,30vw)] overflow-hidden transition-[transform,opacity] duration-500 ease-[cubic-bezier(.2,.8,.2,1)] ${
+                className={`panel hud absolute top-2 bottom-5 left-5 z-10 w-[min(400px,30vw)] overflow-hidden transition-[transform,opacity] duration-500 ease-[cubic-bezier(.2,.8,.2,1)] ${
                   chatOpen ? "translate-x-0 opacity-100" : "pointer-events-none -translate-x-[110%] opacity-0"
                 }`}
               >
-                {chat("panel")}
+                <div className="sheen" aria-hidden />
+                <div className="relative z-[1] h-full">{chat("panel")}</div>
               </aside>
               <aside
                 aria-label="Workspace"
                 aria-hidden={!workOpen}
                 inert={!workOpen}
-                className={`panel absolute top-2 right-5 bottom-5 z-10 w-[min(440px,34vw)] overflow-hidden transition-[transform,opacity] duration-500 ease-[cubic-bezier(.2,.8,.2,1)] ${
+                className={`panel hud absolute top-2 right-5 bottom-5 z-10 w-[min(440px,34vw)] overflow-hidden transition-[transform,opacity] duration-500 ease-[cubic-bezier(.2,.8,.2,1)] ${
                   workOpen ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-[110%] opacity-0"
                 }`}
               >
-                {work("panel")}
+                <div className="sheen" aria-hidden />
+                <div className="relative z-[1] h-full">{work("panel")}</div>
               </aside>
             </>
           )}
@@ -210,12 +215,15 @@ export function VoiceWorkspace() {
       {!wide && (chatOpen || workOpen) && (
         <div className="fixed inset-0 z-30" role="dialog" aria-modal="true" aria-label={chatOpen ? "Chat" : "Workspace"}>
           <button className="absolute inset-0 bg-[rgba(2,4,10,0.55)]" aria-label="Close" onClick={() => (chatOpen ? setChatOpen(false) : setWorkOpen(false))} />
-          <div className="panel animate-rise absolute inset-x-0 bottom-0 flex h-[80dvh] flex-col rounded-b-none! border-b-0">
-            <div className="sheet-grab" aria-hidden />
-            <div className="min-h-0 flex-1">{chatOpen ? chat("sheet") : work("sheet")}</div>
+          <div className="panel hud animate-rise absolute inset-x-0 bottom-0 flex h-[80dvh] flex-col rounded-b-none! border-b-0">
+            <div className="sheen" aria-hidden />
+            <div className="sheet-grab relative z-[1]" aria-hidden />
+            <div className="relative z-[1] min-h-0 flex-1">{chatOpen ? chat("sheet") : work("sheet")}</div>
           </div>
         </div>
       )}
+
+      <ChangeToast activity={state.activity} />
 
       <SessionDialog
         closing={state.connection === "connected" ? state.closing : null}
