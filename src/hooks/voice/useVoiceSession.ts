@@ -327,5 +327,10 @@ export function useVoiceSession() {
     stopDemo,
     levels,
     dismissError: (id: number) => dispatch({ type: "dismiss_error", id }),
+    /** Highlight one of the listed items, e.g. from a reply that mentions it. */
+    focusItem: (id: number) => {
+      const item = state.results?.items.find((i) => i.id === id);
+      if (item) dispatch({ type: "work_item_focused", item });
+    },
   };
 }

@@ -26,6 +26,15 @@ export function WorkspacePanel({ state, variant, busy, onClose, onResolve, onDis
   const loading = activeTool !== null && !pending;
   const changes = activity.filter((a) => a.kind !== "cancelled").length;
 
+  // An item picked elsewhere (e.g. from a chat reply) scrolls into view.
+  useEffect(() => {
+    if (focusedId === null) return;
+    setTab("results");
+    requestAnimationFrame(() =>
+      document.querySelector(`[data-item="${focusedId}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }),
+    );
+  }, [focusedId]);
+
   // A change waiting for a yes always brings Results to the front.
   useEffect(() => {
     if (pending) setTab("results");
@@ -86,8 +95,9 @@ export function WorkspacePanel({ state, variant, busy, onClose, onResolve, onDis
               ) : (
                 <div className={`flex flex-col gap-3 transition-opacity ${loading ? "opacity-50" : ""}`}>
                   {results.items.map((item, i) => (
-                    <WorkItemCard key={item.id} item={item} position={i + 1} focused={item.id === focusedId} flash={flash[item.id]} />
+                    <WorkItemCard key={item.id} item={item} position={i + 1} focused={item.id === focusedId} flash={flash[item.id]} currentSprint={sprint?.name ?? null} />
                   ))}
+                  {results.items.length > 3 && <div className="listfade" aria-hidden />}
                 </div>
               )
             ) : (

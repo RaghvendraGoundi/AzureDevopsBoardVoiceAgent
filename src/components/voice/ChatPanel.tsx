@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { TranscriptEntry } from "@/hooks/voice/workspaceReducer";
 import type { ConversationSummary } from "@/lib/conversations/types";
+import type { WorkItem } from "@/lib/devops/types";
 import { relativeTime } from "./time";
-import { CloseIcon, CollapseLeftIcon, HistoryIcon, PlusIcon, SendIcon, TrashIcon } from "./icons";
+import { CloseIcon, CollapseLeftIcon, HistoryIcon, PlusIcon, SendIcon, TrashIcon, WorkspaceIcon } from "./icons";
 
 interface Props {
   variant: "panel" | "sheet";
@@ -25,7 +26,34 @@ interface Props {
   focusKey?: number;
   /** A call is live: show the live signal line under the header. */
   live?: boolean;
+  /** What the workspace is showing, so replies can point at the items they mention. */
+  results?: { items: WorkItem[] } | null;
+  onOpenWorkspace?: () => void;
+  /** Bring one item to the front of the workspace. */
+  onFocusItem?: (id: number) => void;
 }
+
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+
+/** Up to three of the items on screen that a reply names, by title or number, in the order it names them. */
+function mentioned(text: string, items: WorkItem[]): WorkItem[] {
+  const said = norm(text);
+  return items
+    .map((item) => {
+      const title = norm(item.title);
+      const at = title.length >= 8 ? said.indexOf(title) : -1;
+      const byId = at < 0 ? said.search(new RegExp(`\\b${item.id}\\b`)) : -1;
+      return { item, at: at >= 0 ? at : byId, end: at >= 0 ? at + title.length : byId + String(item.id).length };
+    })
+    .filter((m) => m.at >= 0)
+    // A title inside a longer one ("Fix slow order lookup query" in "Implement fix slow…") isn't a mention of its own.
+    .filter((m, _, all) => !all.some((o) => o !== m && o.at <= m.at && o.end >= m.end && o.end - o.at > m.end - m.at))
+    .sort((a, b) => a.at - b.at)
+    .slice(0, 3)
+    .map((m) => m.item);
+}
+
+const clockTime = (at?: number) => (at ? new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
 
 /** The conversation as a thread, a box to type into it, and the list of saved conversations. */
 export function ChatPanel(p: Props) {
@@ -43,6 +71,8 @@ export function ChatPanel(p: Props) {
   }, [p.focusKey]);
   const current = p.conversations.find((c) => c.id === p.currentId);
   const messages = p.transcript.filter((e) => e.text.trim() || !e.final);
+  const resultItems = p.results?.items ?? [];
+  const lastReplyId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
 
   useEffect(() => {
     if (!history) endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -136,18 +166,38 @@ export function ChatPanel(p: Props) {
               Try “What am I working on this sprint?” or “What’s on hold?”
             </li>
           )}
-          {messages.map((m) => (
-            <li key={m.id} className={`msg ${m.role === "user" ? "you" : ""}`}>
-              <span className="who">
-                <span className="orbdot" aria-hidden />
-                DevOps Voice
-              </span>
-              <div className="bub">
-                {m.text || <span className="text-muted italic">…</span>}
-                {m.interrupted && <span className="ml-1 text-xs text-muted italic">(interrupted)</span>}
-              </div>
-            </li>
-          ))}
+          {messages.map((m) => {
+            const refs = m.role === "assistant" && m.final ? mentioned(m.text, resultItems) : [];
+            return (
+              <li key={m.id} className={`msg ${m.role === "user" ? "you" : ""}`}>
+                <span className="who">
+                  <span className="orbdot" aria-hidden />
+                  DevOps Voice
+                  <em>{clockTime(m.at)}</em>
+                </span>
+                <div className="bub">
+                  {m.text || <span className="text-muted italic">…</span>}
+                  {m.interrupted && <span className="ml-1 text-xs text-muted italic">(interrupted)</span>}
+                </div>
+                {refs.length > 0 && (
+                  <div className="refs" aria-label="Items mentioned">
+                    {refs.map((r) => (
+                      <button key={r.id} onClick={() => p.onFocusItem?.(r.id)}>
+                        <span className="id">#{r.id}</span>
+                        {r.title}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {m.id === lastReplyId && m.final && resultItems.length > 0 && p.onOpenWorkspace && (
+                  <button className="jump" onClick={p.onOpenWorkspace}>
+                    <WorkspaceIcon size={16} />
+                    Shown in Workspace · {resultItems.length} {resultItems.length === 1 ? "item" : "items"}
+                  </button>
+                )}
+              </li>
+            );
+          })}
           <div ref={endRef} />
         </ol>
       )}

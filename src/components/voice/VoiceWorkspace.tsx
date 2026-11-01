@@ -111,6 +111,12 @@ export function VoiceWorkspace() {
       onSend={s.sendText}
       focusKey={focusChat}
       live={live}
+      results={state.results}
+      onOpenWorkspace={openWork}
+      onFocusItem={(id) => {
+        s.focusItem(id);
+        openWork();
+      }}
     />
   );
   const work = (variant: "panel" | "sheet") => (
@@ -143,6 +149,7 @@ export function VoiceWorkspace() {
           onModeChange={s.setMode}
           voice={s.voice}
           onOpenPicker={() => setPickerOpen(true)}
+          onEngineChange={s.setEngine}
           onDemo={s.startDemo}
           onStopDemo={s.stopDemo}
         />
@@ -255,11 +262,13 @@ export function VoiceWorkspace() {
         <VoicePicker
           engine={s.engine}
           voices={s.voices}
+          mode={s.mode}
           locked={locked}
           onClose={() => setPickerOpen(false)}
-          onConfirm={(engine, voice) => {
+          onConfirm={(engine, voice, mode) => {
             s.setEngine(engine);
             s.setVoice(voice, engine);
+            if (engine === "realtime") s.setMode(mode);
             setPickerOpen(false);
           }}
         />

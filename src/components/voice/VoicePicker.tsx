@@ -1,39 +1,61 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { InputMode } from "@/lib/voice/realtimeClient";
 import { voicesFor, type VoiceEngineId } from "@/lib/voice/voices";
-import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, ReplayIcon } from "./icons";
+import { CheckIcon, CloseIcon, KeyboardIcon, MicIcon, WaveIcon } from "./icons";
 import { VoiceOrb } from "./VoiceOrb";
 
 interface Props {
   engine: VoiceEngineId;
   /** The saved voice for each model (null: the default, Marin). */
   voices: Record<VoiceEngineId, string | null>;
+  mode: InputMode;
   /** A call is running: the model and voice can't change until it ends. */
   locked: boolean;
-  onConfirm: (engine: VoiceEngineId, voice: string) => void;
+  onConfirm: (engine: VoiceEngineId, voice: string, mode: InputMode) => void;
   onClose: () => void;
 }
 
-const MODELS: Array<{ id: VoiceEngineId; name: string; model: string; blurb: string }> = [
+const ENGINES: Array<{ id: VoiceEngineId; name: string; model: string; blurb: string }> = [
   { id: "realtime", name: "Realtime", model: "gpt-realtime-2.1", blurb: "Fastest on the board. You can also type." },
   { id: "live", name: "GPT-Live", model: "gpt-live-1", blurb: "Most natural. Talks and listens at once." },
 ];
 
+const Play = ({ size = 16 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
+    <path d="M7 5v14l12-7z" fill="currentColor" />
+  </svg>
+);
+
+const Eq = ({ bars = 3 }: { bars?: number }) => (
+  <span className="eqb" aria-hidden>
+    {Array.from({ length: bars }, (_, i) => (
+      <u key={i} />
+    ))}
+  </span>
+);
+
+const BothWays = ({ size = 22 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M7 7h12l-3-3M17 17H5l3 3" />
+  </svg>
+);
+
 /**
- * Choose the model and the voice, hearing each voice as you go: arrows,
- * swipes or the arrow keys move between voices and play a short greeting
- * while the orb moves with it.
+ * Choose the engine, the voice and how you talk. Picking a voice plays a
+ * short greeting in it; the preview's orb moves with the sample.
  */
-export function VoicePicker({ engine: initialEngine, voices, locked, onConfirm, onClose }: Props) {
+export function VoicePicker({ engine: initialEngine, voices, mode: initialMode, locked, onConfirm, onClose }: Props) {
   const [engine, setEngine] = useState<VoiceEngineId>(initialEngine);
+  const [mode, setMode] = useState<InputMode>(initialMode);
   const list = voicesFor(engine);
-  const startIndex = (e: VoiceEngineId) => Math.max(0, voicesFor(e).findIndex((v) => v.id === (voices[e] ?? "marin")));
-  const [index, setIndex] = useState(() => startIndex(initialEngine));
+  const savedId = (e: VoiceEngineId) => voices[e] ?? "marin";
+  const [voiceId, setVoiceId] = useState(() => savedId(initialEngine));
+  const voice = list.find((v) => v.id === voiceId) ?? list[0];
   const [playing, setPlaying] = useState(false);
   const playingRef = useRef(false);
   playingRef.current = playing;
-  const voice = list[index];
 
   // One audio element for previews, metered so the orb can follow the voice.
   const audio = useRef<HTMLAudioElement | null>(null);
@@ -42,7 +64,6 @@ export function VoicePicker({ engine: initialEngine, voices, locked, onConfirm, 
   const ensureAudio = useCallback(() => {
     if (audio.current) return audio.current;
     const el = new Audio();
-    el.crossOrigin = "anonymous";
     el.onplaying = () => setPlaying(true);
     const stopped = () => setPlaying(false);
     el.onended = stopped;
@@ -83,13 +104,6 @@ export function VoicePicker({ engine: initialEngine, voices, locked, onConfirm, 
     [ensureAudio],
   );
 
-  // Hear each voice as it comes up (opening the picker was a click, so playback is allowed).
-  // Not during a call, where the mic would pick it up: there you press Play.
-  useEffect(() => {
-    if (voice && !locked) play(engine, voice.id);
-    else audio.current?.pause();
-  }, [engine, voice, play, locked]);
-
   useEffect(
     () => () => {
       audio.current?.pause();
@@ -98,99 +112,182 @@ export function VoicePicker({ engine: initialEngine, voices, locked, onConfirm, 
     [],
   );
 
-  const move = useCallback((step: number) => setIndex((i) => (i + step + list.length) % list.length), [list.length]);
-  const switchModel = (e: VoiceEngineId) => {
-    if (e === engine || locked) return;
-    setEngine(e);
-    setIndex(startIndex(e));
-  };
-
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-      else if (e.key === "ArrowRight") move(1);
-      else if (e.key === "ArrowLeft") move(-1);
-    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [move, onClose]);
+  }, [onClose]);
 
-  // Swipe between voices on touch screens.
-  const swipe = useRef<number | null>(null);
+  const pickVoice = (id: string) => {
+    setVoiceId(id);
+    // During a call the mic would pick the sample up, so there it plays only on a second tap.
+    if (!locked || id === voiceId) play(engine, id);
+  };
+  const pickEngine = (e: VoiceEngineId) => {
+    if (e === engine || locked) return;
+    audio.current?.pause();
+    setEngine(e);
+    setVoiceId(savedId(e));
+  };
+
+  const engineName = ENGINES.find((x) => x.id === engine)!.name;
+  const talkName = mode === "ptt" ? "Push to talk" : "Hands-free";
 
   return (
     <div className="picker-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="picker panel hud" role="dialog" aria-modal="true" aria-label="Choose model and voice">
-        <div className="sheen" />
-        <div className="relative z-[1] flex h-full flex-col">
-          <div className="flex items-center justify-between px-6 pt-5">
-            <div>
-              <p className="lab">Assistant</p>
-              <h2 className="disp text-[19px] font-bold">Model and voice</h2>
-            </div>
-            <button className="ibtn" onClick={onClose} aria-label="Close">
-              <CloseIcon size={18} />
-            </button>
+      <section className="picker" role="dialog" aria-modal="true" aria-labelledby="picker-title">
+        <div className="pk-head">
+          <div>
+            <p className="lab">Assistant</p>
+            <h2 id="picker-title" className="serif">
+              Engine &amp; voice
+            </h2>
           </div>
+          <button className="ibtn lg" onClick={onClose} aria-label="Close">
+            <CloseIcon size={20} />
+          </button>
+        </div>
 
-          <div role="radiogroup" aria-label="Model" className="mx-6 mt-4 grid grid-cols-2 gap-2">
-            {MODELS.map((m) => (
-              <button key={m.id} role="radio" aria-checked={engine === m.id} className="modelcard" onClick={() => switchModel(m.id)} disabled={locked && engine !== m.id}>
-                <span className="flex items-baseline justify-between gap-2">
-                  <span className="disp text-[15px] font-bold">{m.name}</span>
-                  <span className="mono text-[10px] text-muted">{m.model}</span>
+        <div className="pk-engines" role="radiogroup" aria-label="Engine">
+          {ENGINES.map((m) => (
+            <button
+              key={m.id}
+              role="radio"
+              aria-checked={engine === m.id}
+              className="ecard"
+              onClick={() => pickEngine(m.id)}
+              disabled={locked && engine !== m.id}
+            >
+              <span className="eic">{m.id === "realtime" ? <WaveIcon size={22} /> : <BothWays />}</span>
+              <span className="min-w-0">
+                <span className="et">
+                  <b>{m.name}</b>
+                  <code>{m.model}</code>
                 </span>
-                <span className="sub2 text-[12.5px]!">{m.blurb}</span>
-              </button>
-            ))}
-          </div>
-          {locked && <p className="sub2 mx-6 mt-2 text-xs!">End the call to change the model or voice. You can still listen.</p>}
+                <span className="ed">{m.blurb}</span>
+              </span>
+              <span className="ck" aria-hidden>
+                <CheckIcon size={14} />
+              </span>
+            </button>
+          ))}
+        </div>
+        {locked && <p className="sub2 px-9 pt-2 text-xs!">End the call to change the engine, voice or how you talk. You can still listen.</p>}
 
-          <div
-            className="relative mt-2 flex flex-1 touch-pan-y flex-col items-center justify-center px-6"
-            onPointerDown={(e) => (swipe.current = e.clientX)}
-            onPointerUp={(e) => {
-              if (swipe.current === null) return;
-              const dx = e.clientX - swipe.current;
-              swipe.current = null;
-              if (Math.abs(dx) > 50) move(dx < 0 ? 1 : -1);
-            }}
-          >
-            <button className="ibtn lg picker-arrow left-4" onClick={() => move(-1)} aria-label="Previous voice">
-              <ChevronLeftIcon size={20} />
-            </button>
-            <button className="ibtn lg picker-arrow right-4" onClick={() => move(1)} aria-label="Next voice">
-              <ChevronRightIcon size={20} />
-            </button>
-
-            <div className="w-[min(260px,62vw)]">
-              <VoiceOrb state={playing ? "speaking" : "idle"} levels={levels} />
+        <div className="pk-body">
+          <div className="min-w-0">
+            <div className="pk-sec">
+              <b>Voice</b>
+              <span>{list.length} voices · tap to preview</span>
             </div>
-            <div key={`${engine}-${voice.id}`} className="voice-name text-center" aria-live="polite">
-              <h3 className="serif text-[40px] leading-none">{voice.label}</h3>
-              <p className="sub2 mt-2">{voice.detail}</p>
-            </div>
-            <button className="pill sm mt-4" onClick={() => play(engine, voice.id)} aria-label={`Play ${voice.label} again`}>
-              <ReplayIcon size={15} />
-              {playing ? "Playing…" : locked ? "Play sample" : "Play again"}
-            </button>
-            <div className="mt-5 flex flex-wrap justify-center gap-1.5" aria-hidden>
-              {list.map((v, i) => (
-                <i key={v.id} className={`pdot ${i === index ? "on" : ""}`} onClick={() => setIndex(i)} />
-              ))}
+            <div role="radiogroup" aria-label="Voice" className="vgrid" style={{ gridTemplateRows: `repeat(${Math.ceil(list.length / 2)}, 60px)` }}>
+              {list.map((v) => {
+                const on = v.id === voice.id;
+                return (
+                  <button key={v.id} role="radio" aria-checked={on} className="vrow" onClick={() => pickVoice(v.id)}>
+                    <span className="vav">{on && playing ? <Eq /> : on ? <CheckIcon size={16} /> : <Play />}</span>
+                    <span className="min-w-0">
+                      <span className="vn">{v.label}</span>
+                      <span className="vt">{v.detail}</span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          <div className="flex gap-3 px-6 pt-2 pb-6">
-            <button className="pill lg flex-1" onClick={onClose}>
+          <div className="pk-side">
+            <div className="pv">
+              <div className={`morb ${playing ? "pl" : ""}`}>
+                <VoiceOrb state={playing ? "speaking" : "idle"} levels={levels} />
+              </div>
+              <div className="min-w-0">
+                <p key={`${engine}-${voice.id}`} className="pn serif voice-name">
+                  {voice.label}
+                </p>
+                <p className="pt">{voice.detail}</p>
+                <button className="play" onClick={() => (playing ? audio.current?.pause() : play(engine, voice.id))}>
+                  {playing ? (
+                    <>
+                      <Eq bars={4} />
+                      Playing…
+                    </>
+                  ) : (
+                    <>
+                      <Play />
+                      Play sample
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <div className="pk-sec">
+                <b>How you talk</b>
+              </div>
+              {engine === "realtime" ? (
+                <div role="radiogroup" aria-label="How you talk" className="flex flex-col gap-2.5">
+                  <button role="radio" aria-checked={mode === "handsfree"} className="mopt" onClick={() => setMode("handsfree")} disabled={locked}>
+                    <span className="mic">
+                      <MicIcon size={20} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="mt">Hands-free</span>
+                      <span className="md">Speak freely. I reply when you pause.</span>
+                    </span>
+                    <span className="rd" aria-hidden />
+                  </button>
+                  <button role="radio" aria-checked={mode === "ptt"} className="mopt" onClick={() => setMode("ptt")} disabled={locked}>
+                    <span className="mic">
+                      <KeyboardIcon size={20} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="mt">Push to talk</span>
+                      <span className="md">
+                        Hold <kbd>SPACE</kbd> to talk, release to send.
+                      </span>
+                    </span>
+                    <span className="rd" aria-hidden />
+                  </button>
+                </div>
+              ) : (
+                <div className="pk-note">
+                  <span className="mic on">
+                    <BothWays size={20} />
+                  </span>
+                  <span>
+                    <span className="mt">Always on, both ways</span>
+                    <span className="md">I listen while I talk, so you can cut in like a normal conversation. No modes to pick.</span>
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="pk-foot">
+          <div className="sum">
+            <b>{engineName}</b>
+            <s />
+            <span>{voice.label}</span>
+            {engine === "realtime" && (
+              <>
+                <s />
+                <span>{talkName}</span>
+              </>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <button className="pill lg" onClick={onClose}>
               Cancel
             </button>
-            <button className="pill pri lg flex-[1.4]" disabled={locked} onClick={() => onConfirm(engine, voice.id)}>
+            <button className="pill pri lg" disabled={locked} onClick={() => onConfirm(engine, voice.id, mode)}>
               Use {voice.label}
             </button>
           </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

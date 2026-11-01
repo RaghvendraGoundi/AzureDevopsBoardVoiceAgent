@@ -17,6 +17,7 @@ interface Props {
   voice: string | null;
   /** Opens the model and voice picker. */
   onOpenPicker: () => void;
+  onEngineChange: (engine: VoiceEngine) => void;
   /** The scripted demo confirms a real change, so it's only offered on the emulated board. */
   demoAvailable: boolean;
   onModeChange: (mode: InputMode) => void;
@@ -61,25 +62,30 @@ export function TopBar(p: Props) {
       </div>
       <div className="flex-1" />
 
-      {/* What you're talking to, front and centre; opens the model and voice picker. */}
-      <button className="modelchip absolute left-1/2 hidden -translate-x-1/2 sm:inline-flex" onClick={p.onOpenPicker} aria-label={`Model ${ENGINE_NAME[p.engine]}, voice ${voiceLabel}. Change`}>
-        <span className={`dotorb ${p.engine}`} aria-hidden>
-          <WaveIcon size={14} />
-        </span>
-        <b>{ENGINE_NAME[p.engine]}</b>
-        <small>· {voiceLabel}</small>
-        <ChevronDownIcon size={15} className="text-muted" />
-      </button>
-
-      {p.engine === "realtime" && (
-        <div role="radiogroup" aria-label="Input mode" className="modeseg hidden sm:inline-flex">
-          {(["handsfree", "ptt"] as const).map((m) => (
-            <button key={m} role="radio" aria-checked={p.mode === m} onClick={() => p.onModeChange(m)}>
-              {m === "handsfree" ? "Hands-free" : "Push to talk"}
+      {/* What you're talking to, front and centre: the engine, and the voice (opens the picker). */}
+      <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-3 md:flex">
+        <div className="esw" role="radiogroup" aria-label="Engine">
+          {(["realtime", "live"] as const).map((e) => (
+            <button
+              key={e}
+              role="radio"
+              aria-checked={p.engine === e}
+              disabled={live || p.demoRunning}
+              title={live ? "End the call to switch engines" : undefined}
+              onClick={() => p.onEngineChange(e)}
+            >
+              {ENGINE_NAME[e]}
             </button>
           ))}
         </div>
-      )}
+        <button className="modelchip" onClick={p.onOpenPicker} aria-label={`Choose voice. Currently ${voiceLabel}`}>
+          <span className="dotorb realtime" aria-hidden>
+            <WaveIcon size={16} />
+          </span>
+          <b>{voiceLabel}</b>
+          <ChevronDownIcon size={16} className="text-muted" />
+        </button>
+      </div>
 
       <span className="conn" data-state={p.demoRunning ? "connecting" : p.connection}>
         <i aria-hidden />
@@ -101,7 +107,7 @@ export function TopBar(p: Props) {
             </button>
 
             {p.engine === "realtime" && (
-              <div className="mt-3 sm:hidden">
+              <div className="mt-3">
                 <p className="lab px-2 pb-2">Input</p>
                 <div role="radiogroup" aria-label="Input mode (phone)" className="modeseg">
                   {(["handsfree", "ptt"] as const).map((m) => (

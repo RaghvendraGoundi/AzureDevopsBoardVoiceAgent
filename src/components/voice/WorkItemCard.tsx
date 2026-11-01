@@ -18,26 +18,41 @@ interface Props {
   position?: number;
   focused?: boolean;
   flash?: "created" | "updated";
+  /** The current sprint's name: other sprints are called out on the card. */
+  currentSprint?: string | null;
 }
 
-export function WorkItemCard({ item, position, focused, flash }: Props) {
+const typeTone = (type: string) => {
+  const t = type.toLowerCase();
+  if (t === "bug" || t === "impediment" || t === "issue") return "bug";
+  if (t === "task") return "task";
+  if (t === "epic" || t === "feature" || t === "initiative") return "port";
+  return "story";
+};
+
+export function WorkItemCard({ item, position, focused, flash, currentSprint }: Props) {
+  const who = item.assignedTo?.displayName ?? null;
+  const offSprint = item.sprintName !== (currentSprint ?? null) ? (item.sprintName ?? "Backlog") : null;
   return (
     <article
-      className={`card ${flash === "created" ? "materialize" : flash === "updated" ? "card-updated" : "animate-rise"} ${focused ? "focus" : ""}`}
+      className={`card wcard ${flash === "created" ? "materialize" : flash === "updated" ? "card-updated" : "animate-rise"} ${focused ? "focus" : ""}`}
+      aria-label={position !== undefined ? `Item ${position}` : undefined}
+      data-item={item.id}
     >
-      <div className="meta">
-        {position !== undefined && <span className="text-fg/70">{position}.</span>}
-        <span className="tg">
-          <TypeIcon type={item.type} />
+      <div className="crow">
+        <span className={`ty ${typeTone(item.type)}`}>
+          <i aria-hidden>
+            <TypeIcon type={item.type} size={16} />
+          </i>
           {item.type}
+          <span className="id">#{item.id}</span>
         </span>
-        <span>#{item.id}</span>
         {/* Keyed by state so a status change re-runs the pop-in. */}
-        <span key={item.state} className={`ml-auto ${flash === "updated" ? "pill-in" : ""}`}>
+        <span key={item.state} className={flash === "updated" ? "pill-in" : ""}>
           <StateBadge state={item.state} category={item.stateCategory} />
         </span>
       </div>
-      <h3 className="ttl">
+      <h3 className="ct">
         {item.url ? (
           <a href={item.url} target="_blank" rel="noreferrer" className="hover:underline">
             {item.title}
@@ -47,19 +62,44 @@ export function WorkItemCard({ item, position, focused, flash }: Props) {
         )}
       </h3>
       {item.parentId && (
-        <p className="sub2 truncate" title={item.parentTitle ?? undefined}>
-          ↳ #{item.parentId} {item.parentTitle}
+        <p className="par" title={item.parentTitle ?? undefined}>
+          <ParentIcon />
+          <span className="truncate">
+            #{item.parentId} {item.parentTitle}
+          </span>
         </p>
       )}
-      <p className="sub2 mt-1">
-        {item.sprintName ?? "Backlog"} · {item.assignedTo?.displayName ?? "Unassigned"}
-        {item.priority !== null && ` · P${item.priority}`}
-      </p>
+      <div className="wmeta">
+        <span className="who2">
+          <span className="ava" aria-hidden>
+            {who ? who.trim()[0]?.toUpperCase() : "?"}
+          </span>
+          {who ? who.split(" ")[0] : "Unassigned"}
+          {offSprint && <span className="text-muted">· {offSprint}</span>}
+        </span>
+        {item.priority !== null && (
+          <span className={`prio ${item.priority === 1 ? "hi" : ""}`}>
+            <FlagIcon />P{item.priority}
+          </span>
+        )}
+      </div>
       {flash && (
-        <p className="mono mt-2 text-[11px] font-semibold tracking-[0.08em] text-voice animate-rise">
+        <p className="mono text-[11px] font-semibold tracking-[0.08em] text-voice animate-rise">
           {flash === "created" ? "✓ CREATED" : "✓ UPDATED"}
         </p>
       )}
     </article>
   );
 }
+
+const ParentIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden className="flex-none">
+    <path d="M5 5v6a3 3 0 0 0 3 3h11M15 10l4 4-4 4" />
+  </svg>
+);
+
+const FlagIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M6 21V4M6 5h11l-2 4 2 4H6" />
+  </svg>
+);
