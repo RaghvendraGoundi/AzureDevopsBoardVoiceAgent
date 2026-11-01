@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { VoiceEngine } from "@/hooks/voice/useVoiceSession";
 import type { InputMode } from "@/lib/voice/realtimeClient";
 import type { ConnectionState } from "@/types/voice";
+import { voicesFor } from "@/lib/voice/voices";
 import { BoardIcon, LogoMark, SettingsIcon } from "./icons";
 
 interface Props {
@@ -12,6 +13,9 @@ interface Props {
   demoRunning: boolean;
   mode: InputMode;
   engine: VoiceEngine;
+  /** The chosen voice for this engine; null is the default. */
+  voice: string | null;
+  onVoiceChange: (voice: string) => void;
   /** The scripted demo confirms a real change, so it's only offered on the emulated board. */
   demoAvailable: boolean;
   onModeChange: (mode: InputMode) => void;
@@ -79,7 +83,7 @@ export function TopBar(p: Props) {
           <SettingsIcon size={18} />
         </button>
         {open && (
-          <div className="panel animate-rise absolute top-12 right-0 w-72 rounded-2xl! p-3" role="dialog" aria-label="Settings">
+          <div className="panel animate-rise absolute top-12 right-0 menu max-h-[calc(100dvh-80px)] w-80 overflow-x-hidden overflow-y-auto rounded-2xl! p-3" role="dialog" aria-label="Settings">
             <p className="lab px-2 pt-1 pb-2">Voice model</p>
             <div role="radiogroup" aria-label="Voice model" className="flex flex-col gap-1">
               {ENGINES.map((e) => (
@@ -98,6 +102,20 @@ export function TopBar(p: Props) {
               ))}
             </div>
             {live && <p className="sub2 px-2 pt-1 text-xs!">End the call to switch models.</p>}
+
+            <p className="lab mt-3 px-2 pb-2">Voice</p>
+            <div role="radiogroup" aria-label="Voice" className="voicegrid">
+              {voicesFor(p.engine).map((v) => {
+                const on = (p.voice ?? "marin") === v.id;
+                return (
+                  <button key={v.id} role="radio" aria-checked={on} onClick={() => p.onVoiceChange(v.id)} title={v.detail}>
+                    <span className="text-[13px] font-semibold">{v.label}</span>
+                    <span className="sub2 truncate text-[11px]!">{v.detail}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="sub2 px-2 pt-1.5 text-xs!">{live ? "The new voice starts on your next call." : "Used from your next call."}</p>
 
             {p.engine === "realtime" && (
               <div className="mt-3 sm:hidden">

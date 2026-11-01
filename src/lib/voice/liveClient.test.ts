@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolResponse, VoiceEvent } from "@/types/voice";
 import { buildLiveSession, LIVE_BACKEND_TOOLS } from "./liveConfig";
-import { isEndRequest, LiveClient, UTTERANCE_GAP_MS } from "./liveClient";
+import { isEndRequest, LiveClient, SPEAK_WATCHDOG_MS, UTTERANCE_GAP_MS } from "./liveClient";
 
 /** Drives the Live event handling with a fake data channel. */
 function setup(
@@ -111,7 +111,7 @@ describe("backend tool calls", () => {
     backend({ type: "response.created" });
     backend({ type: "response.completed" });
     await vi.runAllTimersAsync();
-    expect(sent).toEqual([]);
+    expect(sent.filter((e) => e.type === "response.create")).toEqual([]);
   });
 
   it("runs tools one at a time so writes stay in order", async () => {
@@ -143,6 +143,74 @@ describe("backend tool calls", () => {
     await vi.runAllTimersAsync();
     expect(JSON.parse((sent[0] as { item: { output: string } }).item.output)).toMatchObject({ ok: false });
     expect(sent.at(-1)?.type).toBe("response.create");
+  });
+});
+
+describe("answers that never get spoken", () => {
+  const finish = (backend: (e: Record<string, unknown>, d?: string) => void, text: string, d = "item_d2") => {
+    backend({ type: "response.created" }, d);
+    backend({ type: "response.output_item.done", item: { type: "message", content: [{ type: "output_text", text }] } }, d);
+    backend({ type: "response.completed" }, d);
+  };
+  const nudges = (sent: Record<string, unknown>[]) => sent.filter((e) => e.type === "session.commentary.append");
+
+  it("nudges the voice model to say a finished answer it stayed silent about", () => {
+    const { backend, sent } = setup();
+    finish(backend, "You have six open user stories.");
+    vi.advanceTimersByTime(SPEAK_WATCHDOG_MS - 100);
+    expect(nudges(sent)).toHaveLength(0);
+    vi.advanceTimersByTime(200);
+    expect(nudges(sent)).toHaveLength(1);
+    expect(nudges(sent)[0]).toMatchObject({ delegation_id: null });
+    expect(String(nudges(sent)[0].content)).toMatch(/six open user stories/);
+  });
+
+  it("leaves it alone when the answer is spoken, even if speech began before the backend finished", () => {
+    const { backend, assistant, sent } = setup();
+    backend({ type: "response.created" }, "item_d2");
+    assistant(" You have six open user stories.");
+    backend({ type: "response.output_item.done", item: { type: "message", content: [{ type: "output_text", text: "Six stories." }] } }, "item_d2");
+    backend({ type: "response.completed" }, "item_d2");
+    vi.advanceTimersByTime(SPEAK_WATCHDOG_MS * 3);
+    expect(nudges(sent)).toHaveLength(0);
+  });
+
+  it("waits for the user to stop talking before nudging", () => {
+    const { backend, user, sent } = setup();
+    finish(backend, "Six stories.");
+    vi.advanceTimersByTime(SPEAK_WATCHDOG_MS - 500);
+    user(" hello?");
+    vi.advanceTimersByTime(700);
+    expect(nudges(sent)).toHaveLength(0);
+    vi.advanceTimersByTime(UTTERANCE_GAP_MS * 2);
+    expect(nudges(sent)).toHaveLength(1);
+  });
+
+  it("stops showing Thinking if it stays quiet even after the nudge", () => {
+    const { backend, statuses } = setup();
+    finish(backend, "Six stories.");
+    vi.advanceTimersByTime(SPEAK_WATCHDOG_MS + 6100);
+    expect(statuses().at(-1)).toBe("listening");
+  });
+
+  it("continues overlapping hand-offs only once every tool result is in", async () => {
+    let release!: () => void;
+    const slow = new Promise<void>((r) => (release = r));
+    const { backend, call, sent } = setup(async (name) => {
+      if (name === "slow") await slow;
+      return { output: { ok: true }, uiEvents: [] };
+    });
+    call("c1", "slow");
+    backend({ type: "response.completed" });
+    backend({ type: "response.output_item.done", item: { type: "function_call", call_id: "c2", name: "fast", arguments: "{}" } }, "item_d2");
+    backend({ type: "response.completed" }, "item_d2");
+    await vi.advanceTimersByTimeAsync(10);
+    expect(sent.filter((e) => e.type === "response.create")).toHaveLength(0);
+    release();
+    await vi.advanceTimersByTimeAsync(10);
+    const types = sent.map((e) => e.type);
+    expect(types.filter((t) => t === "response.item.create").length).toBeGreaterThanOrEqual(2);
+    expect(types.lastIndexOf("response.item.create")).toBeLessThan(types.indexOf("response.create"));
   });
 });
 

@@ -22,11 +22,11 @@ export function resolveActionRemote(actionId: string, decision: "confirm" | "can
 }
 
 /** Mints a session key; with a conversation id the session picks up that conversation's earlier turns. */
-export async function fetchSessionCredentials(conversationId?: string | null): Promise<SessionCredentials> {
+export async function fetchSessionCredentials(conversationId?: string | null, voice?: string | null): Promise<SessionCredentials> {
   const res = await fetch("/api/voice/session", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ conversationId: conversationId ?? null }),
+    body: JSON.stringify({ conversationId: conversationId ?? null, voice: voice ?? null }),
   });
   const data = (await res.json().catch(() => ({}))) as {
     clientSecret?: string;

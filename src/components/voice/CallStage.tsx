@@ -68,7 +68,7 @@ export function CallStage({ state, mode, talking, muted, captions, demoRunning, 
   const idle = !live && state.connection !== "connecting" && status !== "error" && state.connection !== "failed";
   let word = "Ready";
   let ind: "l" | "s" | "t" | "i" | "c" | null = "i";
-  let sub = "Tap the orb, or just start talking.";
+  let sub = "Tap the orb or press Space to start.";
   if (state.connection === "connecting") {
     word = "Connecting";
     ind = "t";
@@ -76,7 +76,7 @@ export function CallStage({ state, mode, talking, muted, captions, demoRunning, 
   } else if (status === "error" || state.connection === "failed") {
     word = "Something went wrong";
     ind = null;
-    sub = state.connectionError ?? "Tap the orb to try again.";
+    sub = state.connectionError ?? "Tap the orb or press Space to try again.";
   } else if (yourCall) {
     word = "Your call";
     ind = "l";
@@ -84,7 +84,7 @@ export function CallStage({ state, mode, talking, muted, captions, demoRunning, 
   } else if (status === "speaking") {
     word = "Speaking";
     ind = "s";
-    sub = "Tap the orb to interrupt";
+    sub = mode === "ptt" ? "Tap the orb to interrupt" : "Tap the orb or press Space to interrupt";
   } else if (status === "processing") {
     word = "Thinking";
     ind = "t";

@@ -25,9 +25,14 @@ You are a voice assistant for an Azure DevOps board. You help ${currentUser} rev
 - While the backend works, say at most one short acknowledgement, such as "Let me check."
 - Speak the backend's answer naturally and briefly. Never make up board data, and never say a change was made unless the backend said it succeeded.
 - The screen shows full details, so summarise: counts and the top two or three titles.
+- If the user changes or narrows their request while you're answering (for example "like user stories"), stop, hand the new request to the backend, and always speak its answer when it comes back. Never leave a request you acknowledged unanswered.
 
 # Personality and Tone
-Calm, warm and efficient. Speak at a natural, unhurried pace. Vary your wording.
+- Cheerful and upbeat: a friendly teammate who genuinely enjoys helping. Let the smile come through in your voice.
+- Bright energy at a lively, natural pace, with a light touch of playfulness. Greet the user warmly at the start.
+- Celebrate small wins in a few words, for example "Nice, that's done!" or "Love it, it's on the board."
+- Keep it genuine and short: one upbeat touch per reply at most, no forced jokes, and vary your wording.
+- When something goes wrong or the user sounds stressed, drop the cheer for calm reassurance.
 
 # Language
 Reply in English. Don't switch language because of an accent or an isolated foreign word; switch only if asked.
@@ -79,11 +84,17 @@ function reasoningEffort(env: NodeJS.ProcessEnv) {
   return REASONING_EFFORTS.find((e) => e === value) ?? "low";
 }
 
-export function buildLiveSession(currentUser: string, env = process.env, boardSummary?: string | null, history?: string | null) {
+export function buildLiveSession(
+  currentUser: string,
+  env = process.env,
+  boardSummary?: string | null,
+  history?: string | null,
+  voice?: string,
+) {
   return {
     model: env.OPENAI_LIVE_MODEL?.trim() || "gpt-live-1",
     instructions: buildLiveInstructions(currentUser, history),
-    audio: { output: { voice: env.LIVE_VOICE?.trim() || "marin" } },
+    audio: { output: { voice: voice ?? (env.LIVE_VOICE?.trim() || "marin") } },
     delegation: {
       type: "responses",
       responses: {

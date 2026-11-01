@@ -46,6 +46,30 @@ export function VoiceWorkspace() {
   useEffect(() => {
     if (state.results || state.pending) setWorkOpen(true);
   }, [state.results, state.pending]);
+  // Space does what tapping the orb does: start a call, or cut the assistant off.
+  // (In push-to-talk calls the session hook owns Space for talking.)
+  const pttCall = live && s.mode === "ptt" && s.engine === "realtime";
+  const speaking = state.status === "speaking";
+  const { start, interrupt } = s;
+  useEffect(() => {
+    if (pttCall || s.demoRunning) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      // Typing, or a focused control that Space already activates.
+      if (t?.closest("input, textarea, select, button, a, [contenteditable], [role=dialog]")) return;
+      if (!locked) {
+        e.preventDefault();
+        void start();
+      } else if (live && speaking) {
+        e.preventDefault();
+        interrupt();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pttCall, locked, live, speaking, start, interrupt, s.demoRunning]);
+
   // On a phone only one sheet is open at a time.
   useEffect(() => {
     if (!wide && chatOpen && workOpen) setChatOpen(false);
@@ -116,6 +140,8 @@ export function VoiceWorkspace() {
           engine={s.engine}
           onModeChange={s.setMode}
           onEngineChange={s.setEngine}
+          voice={s.voice}
+          onVoiceChange={s.setVoice}
           onDemo={s.startDemo}
           onStopDemo={s.stopDemo}
         />
@@ -193,7 +219,7 @@ export function VoiceWorkspace() {
                 muted={s.muted}
                 captions={captions}
                 demoRunning={s.demoRunning}
-                onStart={s.start}
+                levels={s.levels}
                 onStop={s.stop}
                 onToggleMute={s.toggleMute}
                 onToggleCaptions={() => setCaptions((v) => !v)}

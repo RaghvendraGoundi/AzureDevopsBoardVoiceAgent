@@ -5,6 +5,7 @@ import { runDemo } from "@/lib/voice/demoScript";
 import { LiveClient } from "@/lib/voice/liveClient";
 import { RealtimeClient, type InputMode, type SessionCredentials } from "@/lib/voice/realtimeClient";
 import { executeToolRemote, fetchSessionCredentials, resolveActionRemote } from "@/lib/voice/toolExecutor";
+import { voicesFor } from "@/lib/voice/voices";
 import type { BoardInfo } from "@/lib/devops/briefing";
 import type { VoiceEvent } from "@/types/voice";
 import { useConversations } from "./useConversations";
@@ -30,6 +31,10 @@ export function useVoiceSession() {
   const [mode, setModeState] = useState<InputMode>("handsfree");
   const [talking, setTalking] = useState(false);
   const [engine, setEngineState] = useState<VoiceEngine>("realtime");
+  // The chosen voice for each engine; null means the server's default.
+  const [voices, setVoices] = useState<Record<VoiceEngine, string | null>>({ realtime: null, live: null });
+  const realtimeVoice = useRef<string | null>(null);
+  realtimeVoice.current = voices.realtime;
   const clientRef = useRef<RealtimeClient | LiveClient | null>(null);
   const demoAbort = useRef<AbortController | null>(null);
   const prefetched = useRef<{ creds: Promise<SessionCredentials>; at: number } | null>(null);
@@ -41,7 +46,7 @@ export function useVoiceSession() {
 
   /** Mint a session key ahead of time so pressing Start doesn't wait on it. */
   const prefetch = useCallback(() => {
-    const creds = fetchSessionCredentials();
+    const creds = fetchSessionCredentials(null, realtimeVoice.current);
     creds.catch(() => {
       // A failed prefetch is retried for real when the user presses Start.
       prefetched.current = null;
@@ -53,7 +58,7 @@ export function useVoiceSession() {
   const takeCredentials = useCallback(() => {
     const p = prefetched.current;
     prefetched.current = null;
-    return p && Date.now() - p.at < PREFETCH_MAX_AGE_MS ? p.creds : fetchSessionCredentials();
+    return p && Date.now() - p.at < PREFETCH_MAX_AGE_MS ? p.creds : fetchSessionCredentials(null, realtimeVoice.current);
   }, []);
 
   const onEvent = useCallback((event: VoiceEvent) => dispatch(event), []);
@@ -78,8 +83,8 @@ export function useVoiceSession() {
     try {
       const conversationId = await ensureConversation();
       // A prefetched key has no history in it, so a resumed conversation needs a fresh one.
-      const credentials = hasHistory.current ? () => fetchSessionCredentials(conversationId) : takeCredentials;
-      if (client instanceof LiveClient) await client.connect(conversationId);
+      const credentials = hasHistory.current ? () => fetchSessionCredentials(conversationId, voices.realtime) : takeCredentials;
+      if (client instanceof LiveClient) await client.connect(conversationId, voices.live);
       else await client.connect(credentials, mode);
       client.setOutputMuted(outputMutedRef.current);
       const text = pendingText.current;
@@ -92,7 +97,27 @@ export function useVoiceSession() {
       clientRef.current = null;
       pendingText.current = null;
     }
-  }, [onEvent, mode, engine, takeCredentials, prefetch, ensureConversation]);
+  }, [onEvent, mode, engine, voices, takeCredentials, prefetch, ensureConversation]);
+
+  /** Takes effect from the next call: a voice is fixed when the session starts. */
+  const setVoice = useCallback(
+    (id: string) => {
+      const forEngine = engine;
+      if (!voicesFor(forEngine).some((v) => v.id === id)) return;
+      setVoices((v) => ({ ...v, [forEngine]: id }));
+      try {
+        localStorage.setItem(`voice-voice-${forEngine}`, id);
+      } catch {
+        // Storage may be unavailable; the choice just won't persist.
+      }
+      // A prefetched Realtime key carries the old voice.
+      if (forEngine === "realtime") {
+        realtimeVoice.current = id;
+        if (!clientRef.current) prefetch();
+      }
+    },
+    [engine, prefetch],
+  );
 
   const stop = useCallback(() => {
     if (clientRef.current) dispatch({ type: "session_closing", by: "user" });
@@ -236,6 +261,14 @@ export function useVoiceSession() {
     try {
       if (localStorage.getItem("voice-input-mode") === "ptt") setModeState("ptt");
       if (localStorage.getItem("voice-engine") === "live") setEngineState("live");
+      const saved = (e: VoiceEngine) => {
+        const id = localStorage.getItem(`voice-voice-${e}`);
+        return id && voicesFor(e).some((v) => v.id === id) ? id : null;
+      };
+      setVoices({ realtime: saved("realtime"), live: saved("live") });
+      realtimeVoice.current = saved("realtime");
+      // The first prefetch ran before the saved voice was known.
+      if (realtimeVoice.current && !clientRef.current) prefetch();
     } catch {
       // Ignore unavailable storage.
     }
@@ -279,6 +312,8 @@ export function useVoiceSession() {
     talking,
     engine,
     setEngine,
+    voice: voices[engine],
+    setVoice,
     conversations,
     dismissSessionSummary: () => dispatch({ type: "dismiss_session_summary" }),
     setMode,

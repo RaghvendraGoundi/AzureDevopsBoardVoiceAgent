@@ -203,6 +203,8 @@ interface SessionOptions {
   currentUser: string;
   /** Project, sprint, hierarchy and states (see summarizeBoard). */
   boardSummary?: string | null;
+  /** One of REALTIME_VOICES; defaults to REALTIME_VOICE or marin. */
+  voice?: string;
   /** Earlier turns when resuming a conversation (see historySection in conversations/store). */
   history?: string | null;
   /** Extra words that help the transcriber, e.g. current work item titles. */
@@ -210,7 +212,7 @@ interface SessionOptions {
 }
 
 /** GA Realtime session config, identical for OpenAI and Azure. */
-export function buildSessionConfig({ model, transcriptionModel, currentUser, boardSummary, history, keywords = [] }: SessionOptions) {
+export function buildSessionConfig({ model, transcriptionModel, currentUser, boardSummary, history, keywords = [], voice }: SessionOptions) {
   const hintable = HINTABLE_TRANSCRIBERS.has(transcriptionModel);
   return {
     type: "realtime",
@@ -233,7 +235,7 @@ export function buildSessionConfig({ model, transcriptionModel, currentUser, boa
         noise_reduction: noiseReduction(),
         turn_detection: buildTurnDetection(),
       },
-      output: { voice: process.env.REALTIME_VOICE?.trim() || "marin" },
+      output: { voice: voice ?? (process.env.REALTIME_VOICE?.trim() || "marin") },
     },
     tools: toolDefinitions,
     tool_choice: "auto",

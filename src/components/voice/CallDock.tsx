@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import type { InputMode } from "@/lib/voice/realtimeClient";
 import type { AgentStatus, ConnectionState } from "@/types/voice";
 import { CaptionsIcon, EndIcon, InterruptIcon, KeyboardIcon, MicIcon, MuteIcon } from "./icons";
@@ -12,7 +13,8 @@ interface Props {
   muted: boolean;
   captions: boolean;
   demoRunning: boolean;
-  onStart: () => void;
+  /** Live mic and speaker levels, 0..1. */
+  levels: () => { input: number; output: number };
   onStop: () => void;
   onToggleMute: () => void;
   onToggleCaptions: () => void;
@@ -23,18 +25,43 @@ interface Props {
   onStopDemo: () => void;
 }
 
+const BARS = 5;
+
 /**
- * The call dock from variant B: Mute, Captions, Mic, then Interrupt while
- * the assistant speaks (Type otherwise), and End. One big mic when idle.
+ * The call dock: a glass capsule with Mute and Captions on the left, the mic
+ * in the middle with live level meters either side, then Interrupt (while
+ * the assistant speaks) or Type, and End.
  */
 export function CallDock(p: Props) {
   const live = p.connection === "connected";
-  const connecting = p.connection === "connecting";
+  const ptt = p.mode === "ptt";
+  const speaking = p.status === "speaking";
+  const dock = useRef<HTMLDivElement>(null);
+  const { levels } = p;
+
+  // Drive the meters and the mic halo straight from the audio levels, without re-rendering.
+  useEffect(() => {
+    const el = dock.current;
+    if (!el) return;
+    let raf = 0;
+    let you = 0;
+    let them = 0;
+    const tick = () => {
+      const { input, output } = levels();
+      you += (Math.min(1, input * 1.8) - you) * 0.25;
+      them += (Math.min(1, output * 1.8) - them) * 0.25;
+      el.style.setProperty("--you", you.toFixed(3));
+      el.style.setProperty("--them", them.toFixed(3));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [levels]);
 
   if (p.demoRunning) {
     return (
-      <div className="panel flex items-center gap-4 rounded-full! px-5 py-3">
-        <span className="sub2">Playing the scripted demo</span>
+      <div className="dock panel hud">
+        <span className="sub2 px-2">Playing the scripted demo</span>
         <button className="pill sm" onClick={p.onStopDemo}>
           Stop demo
         </button>
@@ -42,37 +69,32 @@ export function CallDock(p: Props) {
     );
   }
 
-  if (!live && !connecting) {
-    return (
-      <div className="dockc">
-        <button className="ibtn xl" onClick={p.onStart} aria-label="Start voice session">
-          <MicIcon size={26} />
-        </button>
-        Start
-      </div>
-    );
-  }
+  const meter = (side: "l" | "r") => (
+    <span className={`meter ${side}`} aria-hidden>
+      {Array.from({ length: BARS }, (_, i) => (
+        <i key={i} style={{ ["--k" as string]: side === "l" ? BARS - i : i + 1 }} />
+      ))}
+    </span>
+  );
 
-  const ptt = p.mode === "ptt";
-  const speaking = p.status === "speaking";
   return (
-    <div className="panel flex w-[min(464px,100%)] items-end justify-between rounded-full! px-[22px] py-3">
-      <div className="dockc">
-        <button className={`ibtn lg ${p.muted ? "on" : ""}`} onClick={p.onToggleMute} aria-pressed={p.muted} aria-label={p.muted ? "Unmute your mic" : "Mute"} disabled={!live}>
+    <div ref={dock} className={`dock panel hud ${speaking ? "them" : ""} ${p.connection === "connecting" ? "wait" : ""}`} role="toolbar" aria-label="Call controls">
+      <div className="dgroup">
+        <button className={`dbtn ${p.muted ? "on warnish" : ""}`} onClick={p.onToggleMute} aria-pressed={p.muted} aria-label={p.muted ? "Unmute your mic" : "Mute"} disabled={!live}>
           <MuteIcon />
+          <span>{p.muted ? "Muted" : "Mute"}</span>
         </button>
-        {p.muted ? "Muted" : "Mute"}
-      </div>
-      <div className="dockc">
-        <button className={`ibtn lg ${p.captions ? "on" : ""}`} onClick={p.onToggleCaptions} aria-pressed={p.captions} aria-label="Captions">
+        <button className={`dbtn ${p.captions ? "on" : ""}`} onClick={p.onToggleCaptions} aria-pressed={p.captions} aria-label="Captions">
           <CaptionsIcon />
+          <span>Captions</span>
         </button>
-        Captions
       </div>
-      <div className="dockc">
+
+      <div className="dmic">
+        {meter("l")}
         {ptt ? (
           <button
-            className={`ibtn xl touch-none select-none ${p.talking ? "" : "off"}`}
+            className={`micbtn touch-none select-none ${p.talking ? "hot" : ""}`}
             onPointerDown={(e) => {
               e.currentTarget.setPointerCapture(e.pointerId);
               p.onTalkStart();
@@ -89,7 +111,7 @@ export function CallDock(p: Props) {
         ) : (
           // Hands-free: the mic is always open; pressing it means "let me talk now".
           <button
-            className={`ibtn xl ${p.muted ? "off" : ""}`}
+            className={`micbtn ${p.muted ? "mute" : "hot"}`}
             onClick={() => (p.muted ? p.onToggleMute() : speaking && p.onInterrupt())}
             aria-label={p.muted ? "Unmute your mic" : "Microphone"}
             disabled={!live}
@@ -97,25 +119,25 @@ export function CallDock(p: Props) {
             <MicIcon size={26} />
           </button>
         )}
-        {ptt && p.talking ? "Talking" : ptt ? "Hold" : "Mic"}
+        {meter("r")}
       </div>
-      <div className="dockc">
+
+      <div className="dgroup">
         {speaking ? (
-          <button className="ibtn lg" onClick={p.onInterrupt} aria-label="Interrupt">
+          <button className="dbtn" onClick={p.onInterrupt} aria-label="Interrupt">
             <InterruptIcon />
+            <span>Interrupt</span>
           </button>
         ) : (
-          <button className="ibtn lg" onClick={p.onType} aria-label="Type instead">
+          <button className="dbtn" onClick={p.onType} aria-label="Type instead">
             <KeyboardIcon size={20} />
+            <span>Type</span>
           </button>
         )}
-        {speaking ? "Interrupt" : "Type"}
-      </div>
-      <div className="dockc">
-        <button className="ibtn lg warn" onClick={p.onStop} aria-label="End session">
+        <button className="dbtn end" onClick={p.onStop} aria-label="End session">
           <EndIcon />
+          <span>End</span>
         </button>
-        End
       </div>
     </div>
   );

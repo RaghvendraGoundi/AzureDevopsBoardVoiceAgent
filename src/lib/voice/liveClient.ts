@@ -46,6 +46,18 @@ export function isEndRequest(text: string): boolean {
 
 /** Guard against a backend stuck calling tools. */
 const MAX_TOOL_ROUNDS = 6;
+/**
+ * The backend finished but the voice model hasn't said anything this long
+ * afterwards: nudge it to speak the result. Happens when the user changed
+ * their request mid-answer and two hand-offs overlapped.
+ */
+export const SPEAK_WATCHDOG_MS = 4000;
+/** After a nudge, stop showing "Thinking" if it still stays quiet. */
+const NUDGE_GIVE_UP_MS = 6000;
+/** Commentary is limited to 500 tokens; stay well inside it. */
+const MAX_COMMENTARY_CHARS = 1200;
+/** Logs the Live event stream (minus audio and transcript deltas) in development. */
+const DEBUG_EVENTS = process.env.NODE_ENV === "development";
 
 type ServerEvent = { type: string; [key: string]: unknown };
 
@@ -63,6 +75,15 @@ interface Delegation {
   rounds: number;
   /** Tool runs, chained so board writes happen in order. */
   work: Promise<void>;
+  /** What the backend said in its current response: the answer once it stops calling tools. */
+  answer: string;
+  /** When the backend's current response started (after the previous round's tool results). */
+  startedAt: number;
+}
+
+interface Item {
+  type?: string;
+  content?: Array<{ type?: string; text?: string }>;
 }
 
 interface Utterance {
@@ -99,6 +120,10 @@ export class LiveClient {
   private delegations = new Map<string, Delegation>();
   /** Every tool run, chained in order. */
   private toolQueue: Promise<void> = Promise.resolve();
+  /** When the assistant last said anything. */
+  private lastSpokeAt = 0;
+  /** A finished backend answer the voice model hasn't spoken yet. */
+  private unspoken: { text: string; at: number; timer: ReturnType<typeof setTimeout>; nudged: boolean } | null = null;
 
   constructor(private readonly opts: LiveClientOptions) {}
 
@@ -111,7 +136,7 @@ export class LiveClient {
   }
 
   /** With a conversation id, the session picks up that conversation's earlier turns. */
-  async connect(conversationId?: string | null) {
+  async connect(conversationId?: string | null, voice?: string | null) {
     this.closedByUser = false;
     this.emit({ type: "connection", state: "connecting" });
     this.emit({ type: "agent_status", status: "connecting" });
@@ -163,7 +188,7 @@ export class LiveClient {
       const res = await fetch("/api/voice/live", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sdp: pc.localDescription?.sdp, conversationId: conversationId ?? null }),
+        body: JSON.stringify({ sdp: pc.localDescription?.sdp, conversationId: conversationId ?? null, voice: voice ?? null }),
       });
       const data = (await res.json().catch(() => ({}))) as { sdp?: string; error?: string };
       if (!res.ok || !data.sdp) throw new Error(data.error ?? "Couldn't start a GPT-Live session.");
@@ -257,6 +282,7 @@ export class LiveClient {
   }
 
   private handleServerEvent(ev: ServerEvent) {
+    if (DEBUG_EVENTS) logEvent(ev);
     switch (ev.type) {
       case "session.started":
         this.sessionReady?.();
@@ -272,7 +298,7 @@ export class LiveClient {
         break;
 
       case "response.event":
-        this.onBackendEvent(ev.delegation_id as string, ev.event as { type?: string; item?: { type?: string } });
+        this.onBackendEvent(ev.delegation_id as string, ev.event as { type?: string; item?: Item });
         break;
 
       case "session.closed": {
@@ -301,33 +327,41 @@ export class LiveClient {
   private delegation(id: string): Delegation {
     let d = this.delegations.get(id);
     if (!d) {
-      d = { calls: 0, rounds: 0, work: Promise.resolve() };
+      d = { calls: 0, rounds: 0, work: Promise.resolve(), answer: "", startedAt: Date.now() };
       this.delegations.set(id, d);
     }
     return d;
   }
 
   /** Events from the backend model working on something GPT-Live handed off. */
-  private onBackendEvent(delegationId: string, event: { type?: string; item?: { type?: string } } | undefined) {
+  private onBackendEvent(delegationId: string, event: { type?: string; item?: Item } | undefined) {
     if (!event) return;
     switch (event.type) {
       case "response.created":
+        Object.assign(this.delegation(delegationId), { answer: "", startedAt: Date.now() });
         if (this.status !== "speaking") this.emit({ type: "agent_status", status: "processing" });
         break;
 
       case "response.output_item.done":
-        if (event.item?.type === "function_call") this.runTool(delegationId, event.item as FunctionCallItem);
+        if (event.item?.type === "function_call") this.runTool(delegationId, event.item as unknown as FunctionCallItem);
+        else if (event.item?.type === "message") {
+          const text = (event.item.content ?? []).map((c) => c.text ?? "").join(" ").trim();
+          if (text) this.delegation(delegationId).answer += (this.delegation(delegationId).answer ? " " : "") + text;
+        }
         break;
 
       case "response.completed": {
-        // Once every call in this response has an output, let the backend continue.
         const d = this.delegation(delegationId);
         if (d.calls === 0) {
+          // The backend's final answer: the voice model should say it now.
           this.delegations.delete(delegationId);
+          this.expectSpeech(d.answer, d.startedAt);
           break;
         }
+        // Continue once every tool result is in, this hand-off's and any overlapping one's:
+        // response.create can't say which hand-off it continues, so leave none half-answered.
         d.calls = 0;
-        d.work = d.work.then(() => {
+        d.work = this.toolsSettled().then(() => {
           if (++d.rounds > MAX_TOOL_ROUNDS) {
             this.emit({ type: "error", message: "The assistant got stuck calling tools. Please try rephrasing." });
             return;
@@ -337,6 +371,15 @@ export class LiveClient {
         break;
       }
     }
+  }
+
+  /** Resolves once no tool is running or queued, including ones queued while waiting. */
+  private async toolsSettled() {
+    let queue: Promise<void>;
+    do {
+      queue = this.toolQueue;
+      await queue;
+    } while (queue !== this.toolQueue);
   }
 
   private runTool(delegationId: string, call: FunctionCallItem) {
@@ -385,6 +428,8 @@ export class LiveClient {
   }
 
   private onAssistantWords(delta: string) {
+    this.lastSpokeAt = Date.now();
+    if (this.unspoken && this.lastSpokeAt >= this.unspoken.at) this.clearUnspoken();
     this.assistant ??= { id: `live-${this.sessionTag}-assistant-${++this.seq}`, text: "" };
     const a = this.assistant;
     a.text += delta;
@@ -421,6 +466,52 @@ export class LiveClient {
       return;
     }
     this.emit({ type: "agent_status", status: "listening" });
+  }
+
+  /**
+   * Watch that a finished backend answer actually gets spoken. Speech since
+   * the final round started counts: the voice model may begin before the
+   * backend reports it's done.
+   */
+  private expectSpeech(answer: string, since: number) {
+    if (this.ending) return;
+    this.clearUnspoken();
+    if (this.lastSpokeAt >= since) return;
+    const at = since;
+    this.unspoken = { text: answer, at, nudged: false, timer: setTimeout(() => this.checkSpoken(), SPEAK_WATCHDOG_MS) };
+  }
+
+  private checkSpoken() {
+    const u = this.unspoken;
+    if (!u || this.ending || !this.dc) return this.clearUnspoken();
+    if (this.lastSpokeAt >= u.at) return this.clearUnspoken();
+    // Don't talk over the user: look again once they pause.
+    if (this.user) {
+      u.timer = setTimeout(() => this.checkSpoken(), UTTERANCE_GAP_MS);
+      return;
+    }
+    if (!u.nudged) {
+      u.nudged = true;
+      const result = u.text
+        ? `The answer to the user's latest request is ready. Tell them now, briefly: ${u.text}`
+        : "The board work for the user's latest request has finished and the results are on their screen. Tell them briefly now.";
+      this.send({
+        type: "session.commentary.append",
+        event_id: this.nextId("unspoken"),
+        delegation_id: null,
+        content: result.slice(0, MAX_COMMENTARY_CHARS),
+      });
+      u.timer = setTimeout(() => this.checkSpoken(), NUDGE_GIVE_UP_MS);
+      return;
+    }
+    // Still silent: at least stop showing "Thinking".
+    this.clearUnspoken();
+    if (this.status === "processing") this.emit({ type: "agent_status", status: "listening" });
+  }
+
+  private clearUnspoken() {
+    if (this.unspoken) clearTimeout(this.unspoken.timer);
+    this.unspoken = null;
   }
 
   private armEndTimer(ms: number) {
@@ -478,6 +569,7 @@ export class LiveClient {
     this.closing = null;
     this.sessionReady = null;
     this.delegations.clear();
+    this.clearUnspoken();
     this.dc?.close();
     this.pc?.getSenders().forEach((s) => s.track?.stop());
     this.pc?.close();
@@ -487,4 +579,18 @@ export class LiveClient {
     this.dc = this.pc = this.mic = this.audioEl = this.audioCtx = null;
     this.micAnalyser = this.outAnalyser = null;
   }
+}
+
+/** One line per Live event, nested backend events included; skips audio and transcript deltas. */
+function logEvent(ev: ServerEvent) {
+  if (ev.type.endsWith(".delta")) return;
+  if (ev.type === "response.event") {
+    const inner = ev.event as { type?: string; item?: { type?: string; name?: string } } | undefined;
+    if (!inner?.type || inner.type.endsWith(".delta")) return;
+    const what = inner.item ? ` ${inner.item.type}${inner.item.name ? `:${inner.item.name}` : ""}` : "";
+    console.debug(`[live] ${String(ev.delegation_id).slice(-6)} ${inner.type}${what}`);
+    return;
+  }
+  const delegation = (ev.delegation as { id?: string } | undefined)?.id;
+  console.debug(`[live] ${ev.type}${delegation ? ` ${delegation.slice(-6)}` : ""}${ev.reason ? ` (${String(ev.reason)})` : ""}`);
 }

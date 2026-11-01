@@ -145,6 +145,69 @@ body {
 
   .dockc { display: flex; flex-direction: column; align-items: center; gap: 6px; font: 500 12px var(--font-display); color: var(--mu); }
 
+  /* Call dock: a glass capsule; --you / --them are the live mic and speaker levels (0..1). */
+  .dock {
+    --you: 0; --them: 0;
+    display: flex; align-items: center; justify-content: space-between; gap: 18px;
+    width: min(520px, 100%); padding: 10px 14px; border-radius: 999px !important;
+    animation: dock-in 0.55s cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
+  }
+  .dgroup { display: flex; gap: 6px; }
+  .dbtn {
+    position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    width: 64px; height: 56px; border-radius: 18px; border: 1px solid transparent; background: transparent;
+    color: #d9e6f5; cursor: pointer; transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.15s;
+  }
+  .dbtn span { font: 500 9.5px var(--font-jetbrains); letter-spacing: 0.08em; text-transform: uppercase; color: var(--mu); transition: color 0.2s; }
+  .dbtn:hover { background: rgba(var(--c), 0.14); border-color: rgba(var(--c), 0.35); }
+  .dbtn:hover span { color: #eaf2fb; }
+  .dbtn:active { transform: scale(0.94); }
+  .dbtn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .dbtn:focus-visible, .micbtn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  .dbtn.on { color: #b9fe6f; background: rgba(185, 254, 111, 0.08); border-color: rgba(185, 254, 111, 0.28); }
+  .dbtn.on span { color: #b9fe6f; }
+  .dbtn.on.warnish { color: #ff7a33; background: rgba(255, 86, 0, 0.1); border-color: rgba(255, 86, 0, 0.35); }
+  .dbtn.on.warnish span { color: #ff7a33; }
+  .dbtn.end { color: #ff9aa5; background: rgba(255, 90, 110, 0.1); border-color: rgba(255, 120, 135, 0.3); }
+  .dbtn.end span { color: #ff9aa5; }
+  .dbtn.end:hover { background: rgba(255, 90, 110, 0.22); border-color: rgba(255, 120, 135, 0.6); }
+
+  .dmic { position: relative; display: flex; align-items: center; gap: 10px; }
+  .micbtn {
+    position: relative; width: 64px; height: 64px; border-radius: 50%; border: 0; padding: 0; cursor: pointer;
+    display: grid; place-items: center; background: #b9fe6f; color: #0b1a05;
+    box-shadow: 0 0 calc(24px + var(--you) * 40px) rgba(185, 254, 111, calc(0.35 + var(--you) * 0.4));
+    transition: background 0.2s, transform 0.15s;
+  }
+  .micbtn::before, .micbtn::after { content: ""; position: absolute; inset: -7px; border-radius: 50%; pointer-events: none; }
+  /* Halo that swells with your voice. */
+  .micbtn::before { border: 1.5px solid rgba(185, 254, 111, 0.55); transform: scale(calc(1 + var(--you) * 0.35)); opacity: calc(0.25 + var(--you)); transition: transform 0.08s linear; }
+  /* Slow dashed orbit. */
+  .micbtn::after { inset: -13px; border: 1px dashed rgba(var(--c), 0.45); animation: spinZ 14s linear infinite; }
+  .micbtn:hover { background: #d4ff9e; }
+  .micbtn:active { transform: scale(0.95); }
+  .micbtn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .micbtn.mute { background: var(--lt); color: #0b1424; box-shadow: 0 0 26px rgba(var(--c), 0.45); }
+  .micbtn.mute::before { opacity: 0; }
+  .dock.them .micbtn { background: #e8eef7; color: #0b1424; box-shadow: 0 0 calc(18px + var(--them) * 40px) rgba(var(--c), 0.6); }
+  .dock.them .micbtn::before { border-color: rgba(var(--c), 0.7); transform: scale(calc(1 + var(--them) * 0.35)); opacity: calc(0.25 + var(--them)); }
+  .dock.wait .micbtn::after { border-color: rgba(255, 86, 0, 0.6); animation-duration: 2.5s; }
+
+  /* Level meters: bars grow from the mic outwards, lime for you, steel for the assistant. */
+  .meter { display: flex; align-items: center; gap: 3px; height: 30px; }
+  .meter i {
+    width: 3px; height: 30px; border-radius: 2px; background: #b9fe6f;
+    transform: scaleY(calc(0.12 + var(--you) * (1.1 - var(--k) * 0.15)));
+    opacity: calc(0.3 + var(--you) * 0.7); transition: transform 0.08s linear;
+  }
+  .dock.them .meter i { background: rgb(var(--c)); transform: scaleY(calc(0.12 + var(--them) * (1.1 - var(--k) * 0.15))); opacity: calc(0.3 + var(--them) * 0.7); }
+
+  @media (max-width: 520px) {
+    .dock { gap: 6px; padding: 8px 10px; }
+    .dbtn { width: 52px; }
+    .meter { display: none; }
+  }
+
   /* ---------- panels ---------- */
 
   /* Glass panels: frosted and see-through, with a light edge and HUD corner brackets. */
@@ -340,6 +403,16 @@ body {
   .rowbtn:hover { background: rgba(255, 255, 255, 0.05); }
   .rowbtn[aria-current="true"] { border-color: rgba(var(--c), 0.5); background: rgba(var(--c), 0.12); }
   .rowbtn:disabled { cursor: default; }
+  .menu { scrollbar-width: thin; scrollbar-color: rgba(var(--c), 0.35) transparent; }
+  .voicegrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .voicegrid button {
+    display: flex; flex-direction: column; gap: 1px; min-width: 0; text-align: left; padding: 8px 10px; border-radius: 10px;
+    border: 1px solid transparent; background: transparent; color: #eaf6ff; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+  }
+  .voicegrid button:hover { background: rgba(255, 255, 255, 0.05); }
+  .voicegrid button[aria-checked="true"] { border-color: rgba(185, 254, 111, 0.45); background: rgba(185, 254, 111, 0.08); }
+  .voicegrid button[aria-checked="true"] > span:first-child::after { content: " ●"; color: #b9fe6f; font-size: 9px; vertical-align: 2px; }
+  .voicegrid button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
 }
 
@@ -403,4 +476,9 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}
+
+@keyframes dock-in {
+  from { opacity: 0; transform: translateY(18px) scale(0.96); filter: blur(6px); }
+  to { opacity: 1; transform: none; filter: none; }
 }
