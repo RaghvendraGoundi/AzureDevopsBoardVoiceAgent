@@ -7,6 +7,7 @@ import { CallDock } from "./CallDock";
 import { CallStage } from "./CallStage";
 import { ChangeToast } from "./ChangeToast";
 import { ChatPanel } from "./ChatPanel";
+import { VoicePicker } from "./VoicePicker";
 import { ChatIcon, WorkspaceIcon } from "./icons";
 import { STARS_SHADOW } from "./sceneStars";
 import { SessionDialog } from "./SessionDialog";
@@ -38,6 +39,7 @@ export function VoiceWorkspace() {
   const [workOpen, setWorkOpen] = useState(false);
   const [captions, setCaptions] = useState(true);
   const [focusChat, setFocusChat] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const live = state.connection === "connected" || s.demoRunning;
   const locked = live || state.connection === "connecting";
   const currentTitle = c.conversations.find((x) => x.id === c.currentId)?.title ?? null;
@@ -52,7 +54,7 @@ export function VoiceWorkspace() {
   const speaking = state.status === "speaking";
   const { start, interrupt } = s;
   useEffect(() => {
-    if (pttCall || s.demoRunning) return;
+    if (pttCall || s.demoRunning || pickerOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== "Space" || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
@@ -68,7 +70,7 @@ export function VoiceWorkspace() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [pttCall, locked, live, speaking, start, interrupt, s.demoRunning]);
+  }, [pttCall, locked, live, speaking, start, interrupt, s.demoRunning, pickerOpen]);
 
   // On a phone only one sheet is open at a time.
   useEffect(() => {
@@ -139,9 +141,8 @@ export function VoiceWorkspace() {
           mode={s.mode}
           engine={s.engine}
           onModeChange={s.setMode}
-          onEngineChange={s.setEngine}
           voice={s.voice}
-          onVoiceChange={s.setVoice}
+          onOpenPicker={() => setPickerOpen(true)}
           onDemo={s.startDemo}
           onStopDemo={s.stopDemo}
         />
@@ -250,6 +251,19 @@ export function VoiceWorkspace() {
       )}
 
       <ChangeToast activity={state.activity} />
+      {pickerOpen && (
+        <VoicePicker
+          engine={s.engine}
+          voices={s.voices}
+          locked={locked}
+          onClose={() => setPickerOpen(false)}
+          onConfirm={(engine, voice) => {
+            s.setEngine(engine);
+            s.setVoice(voice, engine);
+            setPickerOpen(false);
+          }}
+        />
+      )}
 
       <SessionDialog
         closing={state.connection === "connected" ? state.closing : null}

@@ -101,8 +101,7 @@ export function useVoiceSession() {
 
   /** Takes effect from the next call: a voice is fixed when the session starts. */
   const setVoice = useCallback(
-    (id: string) => {
-      const forEngine = engine;
+    (id: string, forEngine: VoiceEngine = engine) => {
       if (!voicesFor(forEngine).some((v) => v.id === id)) return;
       setVoices((v) => ({ ...v, [forEngine]: id }));
       try {
@@ -313,6 +312,7 @@ export function useVoiceSession() {
     engine,
     setEngine,
     voice: voices[engine],
+    voices,
     setVoice,
     conversations,
     dismissSessionSummary: () => dispatch({ type: "dismiss_session_summary" }),

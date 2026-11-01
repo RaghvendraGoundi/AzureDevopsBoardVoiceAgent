@@ -6,7 +6,7 @@ import type { VoiceEngine } from "@/hooks/voice/useVoiceSession";
 import type { InputMode } from "@/lib/voice/realtimeClient";
 import type { ConnectionState } from "@/types/voice";
 import { voicesFor } from "@/lib/voice/voices";
-import { BoardIcon, LogoMark, SettingsIcon } from "./icons";
+import { BoardIcon, ChevronDownIcon, LogoMark, SettingsIcon, WaveIcon } from "./icons";
 
 interface Props {
   connection: ConnectionState;
@@ -15,11 +15,11 @@ interface Props {
   engine: VoiceEngine;
   /** The chosen voice for this engine; null is the default. */
   voice: string | null;
-  onVoiceChange: (voice: string) => void;
+  /** Opens the model and voice picker. */
+  onOpenPicker: () => void;
   /** The scripted demo confirms a real change, so it's only offered on the emulated board. */
   demoAvailable: boolean;
   onModeChange: (mode: InputMode) => void;
-  onEngineChange: (engine: VoiceEngine) => void;
   onDemo: () => void;
   onStopDemo: () => void;
 }
@@ -31,15 +31,13 @@ const CONN: Record<ConnectionState, string> = {
   failed: "Disconnected",
 };
 
-const ENGINES: Array<{ id: VoiceEngine; label: string; detail: string }> = [
-  { id: "realtime", label: "Realtime", detail: "gpt-realtime-2.1 · fastest on the board" },
-  { id: "live", label: "GPT-Live", detail: "gpt-live-1 · most natural conversation" },
-];
+const ENGINE_NAME: Record<VoiceEngine, string> = { realtime: "Realtime", live: "GPT-Live" };
 
 export function TopBar(p: Props) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const live = p.connection === "connected" || p.connection === "connecting";
+  const voiceLabel = voicesFor(p.engine).find((v) => v.id === (p.voice ?? "marin"))?.label ?? "Marin";
 
   useEffect(() => {
     if (!open) return;
@@ -63,6 +61,16 @@ export function TopBar(p: Props) {
       </div>
       <div className="flex-1" />
 
+      {/* What you're talking to, front and centre; opens the model and voice picker. */}
+      <button className="modelchip absolute left-1/2 hidden -translate-x-1/2 sm:inline-flex" onClick={p.onOpenPicker} aria-label={`Model ${ENGINE_NAME[p.engine]}, voice ${voiceLabel}. Change`}>
+        <span className={`dotorb ${p.engine}`} aria-hidden>
+          <WaveIcon size={14} />
+        </span>
+        <b>{ENGINE_NAME[p.engine]}</b>
+        <small>· {voiceLabel}</small>
+        <ChevronDownIcon size={15} className="text-muted" />
+      </button>
+
       {p.engine === "realtime" && (
         <div role="radiogroup" aria-label="Input mode" className="modeseg hidden sm:inline-flex">
           {(["handsfree", "ptt"] as const).map((m) => (
@@ -83,39 +91,14 @@ export function TopBar(p: Props) {
           <SettingsIcon size={18} />
         </button>
         {open && (
-          <div className="panel animate-rise absolute top-12 right-0 menu max-h-[calc(100dvh-80px)] w-80 overflow-x-hidden overflow-y-auto rounded-2xl! p-3" role="dialog" aria-label="Settings">
-            <p className="lab px-2 pt-1 pb-2">Voice model</p>
-            <div role="radiogroup" aria-label="Voice model" className="flex flex-col gap-1">
-              {ENGINES.map((e) => (
-                <button
-                  key={e.id}
-                  role="radio"
-                  aria-checked={p.engine === e.id}
-                  disabled={live || p.demoRunning}
-                  onClick={() => p.onEngineChange(e.id)}
-                  className="rowbtn disabled:opacity-50"
-                  aria-current={p.engine === e.id ? "true" : undefined}
-                >
-                  <span className="text-sm font-semibold">{e.label}</span>
-                  <span className="sub2 text-xs!">{e.detail}</span>
-                </button>
-              ))}
-            </div>
-            {live && <p className="sub2 px-2 pt-1 text-xs!">End the call to switch models.</p>}
-
-            <p className="lab mt-3 px-2 pb-2">Voice</p>
-            <div role="radiogroup" aria-label="Voice" className="voicegrid">
-              {voicesFor(p.engine).map((v) => {
-                const on = (p.voice ?? "marin") === v.id;
-                return (
-                  <button key={v.id} role="radio" aria-checked={on} onClick={() => p.onVoiceChange(v.id)} title={v.detail}>
-                    <span className="text-[13px] font-semibold">{v.label}</span>
-                    <span className="sub2 truncate text-[11px]!">{v.detail}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <p className="sub2 px-2 pt-1.5 text-xs!">{live ? "The new voice starts on your next call." : "Used from your next call."}</p>
+          <div className="panel animate-rise absolute top-12 right-0 menu max-h-[calc(100dvh-80px)] w-72 overflow-x-hidden overflow-y-auto rounded-2xl! p-3" role="dialog" aria-label="Settings">
+            <button className="rowbtn" onClick={() => { p.onOpenPicker(); setOpen(false); }}>
+              <span className="lab">Model and voice</span>
+              <span className="text-sm font-semibold">
+                {ENGINE_NAME[p.engine]} · {voiceLabel}
+              </span>
+              <span className="sub2 text-xs!">Compare models and listen to the voices</span>
+            </button>
 
             {p.engine === "realtime" && (
               <div className="mt-3 sm:hidden">

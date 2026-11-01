@@ -403,6 +403,44 @@ body {
   .rowbtn:hover { background: rgba(255, 255, 255, 0.05); }
   .rowbtn[aria-current="true"] { border-color: rgba(var(--c), 0.5); background: rgba(var(--c), 0.12); }
   .rowbtn:disabled { cursor: default; }
+  /* Model chip, centre of the top bar: what you're talking to, one click to change it. */
+  .modelchip {
+    display: inline-flex; align-items: center; gap: 9px; height: 40px; padding: 0 12px 0 6px; border-radius: 999px;
+    border: 1px solid var(--ln); background: rgba(255, 255, 255, 0.05); color: #eaf2fb; cursor: pointer;
+    backdrop-filter: blur(14px); transition: background 0.2s, border-color 0.2s;
+  }
+  .modelchip:hover { background: rgba(var(--c), 0.16); border-color: rgba(var(--c), 0.5); }
+  .modelchip:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+  .modelchip .dotorb {
+    width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #0b1a05;
+    background: radial-gradient(circle at 35% 30%, #e8ffd0, #b9fe6f 55%, #6fa83a); box-shadow: 0 0 14px rgba(185, 254, 111, 0.45);
+  }
+  .modelchip .dotorb.realtime { background: radial-gradient(circle at 35% 30%, #fff, #c9d8ec 50%, #7890b0); box-shadow: 0 0 14px rgba(var(--c), 0.5); color: #0b1424; }
+  .modelchip b { font: 700 14px var(--font-display); }
+  .modelchip small { font: 500 12.5px var(--font-sans); color: var(--mu); }
+
+  /* Model and voice picker. */
+  .picker-backdrop {
+    position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px;
+    background: rgba(4, 6, 12, 0.55); backdrop-filter: blur(6px); animation: fade-in 0.2s ease-out both;
+  }
+  .picker {
+    width: min(520px, 100%); height: min(720px, calc(100dvh - 32px)); border-radius: 28px !important; overflow: hidden;
+    animation: picker-in 0.35s cubic-bezier(0.2, 0.9, 0.25, 1.1) both;
+  }
+  .modelcard {
+    display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 12px 14px; border-radius: 16px; cursor: pointer;
+    border: 1px solid var(--ln); background: rgba(255, 255, 255, 0.03); color: #eaf2fb; transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+  }
+  .modelcard:hover:not(:disabled) { background: rgba(var(--c), 0.12); }
+  .modelcard[aria-checked="true"] { border-color: rgba(185, 254, 111, 0.55); background: rgba(185, 254, 111, 0.07); box-shadow: 0 0 24px rgba(185, 254, 111, 0.12) inset; }
+  .modelcard:disabled { opacity: 0.45; cursor: not-allowed; }
+  .modelcard:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  .picker-arrow { position: absolute; top: 38%; z-index: 2; }
+  .voice-name { animation: voice-in 0.35s ease-out both; }
+  .pdot { width: 6px; height: 6px; border-radius: 50%; background: rgba(var(--c), 0.35); cursor: pointer; transition: width 0.25s, background 0.25s; }
+  .pdot.on { width: 18px; border-radius: 3px; background: #b9fe6f; }
+
   .menu { scrollbar-width: thin; scrollbar-color: rgba(var(--c), 0.35) transparent; }
   .voicegrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
   .voicegrid button {
@@ -482,3 +520,13 @@ body {
   from { opacity: 0; transform: translateY(18px) scale(0.96); filter: blur(6px); }
   to { opacity: 1; transform: none; filter: none; }
 }
+
+@keyframes picker-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes voice-in {
+  from { opacity: 0; transform: translateY(6px); filter: blur(4px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
