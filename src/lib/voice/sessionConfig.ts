@@ -34,11 +34,12 @@ export const BOARD_TOOL_GUIDE = `list_work_items
 - Pass what the user said: assignee "anyone" or a name, sprint "next" or "backlog", state "done", type "bug", search words, or parent_id for an item's children.
 - Don't use when: you already listed those items and nothing has changed.
 get_work_item
-- Use when: the user names an id or wants details of one item, its parent, or what's under it. Its children come back numbered, so "the second one" can refer to them.
+- Use when: the user names an id or wants details of one item, its parent, what's under it, or its comments. Its children come back numbered, so "the second one" can refer to them. It also opens the item on screen.
 get_sprint
 - Use when: the user asks about the sprint itself: dates, days left, or how their work is going.
 propose_update_work_item
-- Use when: the user wants to change an item's state, title, priority, assignee, sprint, or parent, or add a comment or tags. Pass states in their words ("done", "in progress"); the tool maps them to this project's states.
+- Use when: the user wants to change an item's state, title, priority, assignee, sprint, or parent, add a comment or tags, or write or rewrite its description. Pass states in their words ("done", "in progress"); the tool maps them to this project's states.
+- For a description, write a good one when asked: a one-line summary, then short lines for context, scope and acceptance criteria. Read it back briefly (the gist, not every line) before asking to confirm.
 - Don't use when: you're unsure which item they mean. Ask first.
 propose_create_work_item
 - Use when: the user wants a new item. Pass the parent's id whenever you know it, for example from the item you were just discussing. When the user names the parent in words, pass those words as parent; the tool finds it across every allowed parent type.
@@ -48,6 +49,8 @@ propose_create_work_item
 confirm_action
 - Use when: the user clearly says yes to the proposal you just read back.
 - Don't use when: they hesitate, change details, or say anything other than a clear yes. Propose again if the details changed.
+propose_delete_comment
+- Use when: the user wants a comment removed. Call get_work_item first if you don't have the comment ids, and say which comment you mean (whose, and what it says) when you ask to confirm.
 cancel_action
 - Use when: the user says no, cancel or never mind to a pending proposal.`;
 

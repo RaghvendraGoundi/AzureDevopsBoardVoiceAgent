@@ -17,9 +17,21 @@ interface Props {
   onClose: () => void;
 }
 
-const ENGINES: Array<{ id: VoiceEngineId; name: string; model: string; blurb: string }> = [
-  { id: "realtime", name: "Realtime", model: "gpt-realtime-2.1", blurb: "Fastest on the board. You can also type." },
-  { id: "live", name: "GPT-Live", model: "gpt-live-1", blurb: "Most natural. Talks and listens at once." },
+const ENGINES: Array<{ id: VoiceEngineId; name: string; model: string; blurb: string; points: string[] }> = [
+  {
+    id: "realtime",
+    name: "Realtime",
+    model: "gpt-realtime-2.1",
+    blurb: "Quick and precise: best for getting board work done.",
+    points: ["Fastest replies and board changes", "Talk or type; hands-free or push to talk", "Waits for you to finish, then answers"],
+  },
+  {
+    id: "live",
+    name: "GPT-Live",
+    model: "gpt-live-1",
+    blurb: "A natural, two-way conversation.",
+    points: ["Listens while it talks, so you can cut in", "More voices, with regional accents", "Hands board work to a reasoning model, a moment slower"],
+  },
 ];
 
 const Play = ({ size = 16 }: { size?: number }) => (
@@ -165,6 +177,11 @@ export function VoicePicker({ engine: initialEngine, voices, mode: initialMode, 
                   <code>{m.model}</code>
                 </span>
                 <span className="ed">{m.blurb}</span>
+                <ul className="epts">
+                  {m.points.map((pt) => (
+                    <li key={pt}>{pt}</li>
+                  ))}
+                </ul>
               </span>
               <span className="ck" aria-hidden>
                 <CheckIcon size={14} />

@@ -78,8 +78,10 @@ const schemas = {
     parent_id: idSchema.optional(),
     remove_parent: z.boolean().optional(),
     comment: z.string().trim().min(1).max(2000).optional(),
+    description: z.string().trim().max(8000).optional(),
     add_tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
   }),
+  propose_delete_comment: z.object({ id: idSchema, comment_id: idSchema }),
   confirm_action: z.object({ action_id: z.string().min(1).max(64) }),
   cancel_action: z.object({ action_id: z.string().min(1).max(64) }),
   wait_for_user: z.object({}),
@@ -117,7 +119,8 @@ export const toolDefinitions = [
   {
     type: "function",
     name: "get_work_item",
-    description: "One work item in detail: description, its parents up the hierarchy, and its children (numbered by position).",
+    description:
+      "One work item in detail: description, its parents up the hierarchy, its children (numbered by position) and its latest comments (with ids). Shows the item on screen.",
     parameters: { type: "object", properties: { id: { type: "integer" } }, required: ["id"], additionalProperties: false },
   },
   {
@@ -169,10 +172,25 @@ export const toolDefinitions = [
         sprint: str("'current', 'next', 'previous', 'backlog', or a sprint name."),
         parent_id: { type: "integer", description: "Move under this item." },
         remove_parent: { type: "boolean", description: "Only when the user wants the item to have no parent." },
-        comment: str("Added to the item's discussion."),
+        comment: str("Added to the item's discussion, in the user's words or a short clear note."),
+        description: str(
+          "Replaces the description. When the user asks for a good description, write one: a one-line summary, then short paragraphs or '- ' lines for context, scope and acceptance criteria. Plain text, no markdown headings.",
+        ),
         add_tags: { type: "array", items: { type: "string" } },
       },
       required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "propose_delete_comment",
+    description:
+      "Prepare (but do NOT do) deleting one comment from a work item. Get the comment ids from get_work_item first. Returns an action_id; nothing is deleted until confirm_action.",
+    parameters: {
+      type: "object",
+      properties: { id: { type: "integer", description: "The work item." }, comment_id: { type: "integer" } },
+      required: ["id", "comment_id"],
       additionalProperties: false,
     },
   },
@@ -265,6 +283,8 @@ export async function executeTool(name: string, rawArgs: unknown, deps: ToolDeps
         return await proposeCreate(parsed.data as Args<"propose_create_work_item">, deps);
       case "propose_update_work_item":
         return await proposeUpdate(parsed.data as Args<"propose_update_work_item">, deps);
+      case "propose_delete_comment":
+        return await proposeDeleteComment(parsed.data as Args<"propose_delete_comment">, deps);
       case "confirm_action":
         return await confirmAction((parsed.data as Args<"confirm_action">).action_id, deps);
       case "cancel_action":
@@ -441,10 +461,8 @@ async function listWorkItems(args: Args<"list_work_items">, { board }: ToolDeps)
 async function getWorkItem({ id }: Args<"get_work_item">, { board }: ToolDeps): Promise<ToolResponse> {
   const detail = await board.getDetail(id);
   if (!detail) return fail(`Work item #${id} does not exist.`);
-  const { ancestors, children, ...item } = detail;
-  const uiEvents: WorkspaceEvent[] = children.length
-    ? [{ type: "work_items_loaded", title: `Under ${item.type} #${item.id} · ${item.title}`, items: children }]
-    : [{ type: "work_item_focused", item }];
+  const { ancestors, children, comments, ...item } = detail;
+  const uiEvents: WorkspaceEvent[] = [{ type: "work_item_detail", detail }];
   return {
     output: {
       ok: true,
@@ -456,6 +474,7 @@ async function getWorkItem({ id }: Args<"get_work_item">, { board }: ToolDeps): 
         parents: ancestors.map((a) => `${a.type} #${a.id} ${a.title} (${a.state})`),
       },
       children: children.map((c, i) => brief(c, i + 1)),
+      comments: comments.slice(0, 10).map((c) => ({ comment_id: c.id, by: c.author, when: c.createdAt.slice(0, 10), text: c.text.slice(0, 300) })),
     },
     uiEvents,
   };
@@ -714,6 +733,7 @@ async function proposeUpdate(args: Args<"propose_update_work_item">, { board, ac
       changes.parentId = args.parent_id;
     }
     if (args.comment) changes.comment = args.comment;
+    if (args.description !== undefined && args.description !== before.description) changes.description = args.description;
     if (args.add_tags?.length) changes.addTags = args.add_tags;
     if (Object.keys(changes).length === 0) return fail(`Nothing would change on #${before.id}.`);
 
@@ -727,6 +747,7 @@ async function proposeUpdate(args: Args<"propose_update_work_item">, { board, ac
       ...(changes.iterationPath !== undefined && { iterationPath: changes.iterationPath, sprintName: sprintNameFor(ctx, changes.iterationPath) }),
       ...(changes.parentId !== undefined && { parentId: changes.parentId, parentTitle }),
       ...(changes.addTags && { tags: [...new Set([...before.tags, ...changes.addTags])] }),
+      ...(changes.description !== undefined && { description: changes.description }),
     };
     const message = `Update #${before.id} “${before.title}”: ${describeChanges(before, after, changes)}?`;
     const pending: PendingAction = { actionId, kind: "update", message, before, after, changes, expiresAt: new Date(expiresAt).toISOString() };
@@ -753,7 +774,41 @@ function describeChanges(before: WorkItem, after: WorkItem, changes: WorkItemPat
   if (changes.parentId !== undefined) parts.push(after.parentId ? `move under #${after.parentId} ${after.parentTitle ?? ""}`.trim() : "remove its parent");
   if (changes.addTags) parts.push(`tag ${changes.addTags.join(", ")}`);
   if (changes.comment) parts.push(`add a comment`);
+  if (changes.description !== undefined) parts.push(before.description ? "rewrite the description" : "add a description");
   return parts.join(", ");
+}
+
+async function proposeDeleteComment(args: Args<"propose_delete_comment">, { board, actions, userKey }: ToolDeps): Promise<ToolResponse> {
+  const detail = await board.getDetail(args.id);
+  if (!detail) return fail(`Work item #${args.id} does not exist.`);
+  const comment = detail.comments.find((c) => c.id === args.comment_id);
+  if (!comment) {
+    return fail(`#${args.id} has no comment ${args.comment_id}.`, {
+      comments: detail.comments.slice(0, 10).map((c) => ({ comment_id: c.id, by: c.author, text: c.text.slice(0, 120) })),
+    });
+  }
+  const { ancestors: _a, children: _c, comments: _m, ...item } = detail;
+  const { actionId, expiresAt } = actions.add({ kind: "delete_comment", id: item.id, commentId: comment.id }, userKey);
+  const preview = comment.text.length > 80 ? `${comment.text.slice(0, 80)}…` : comment.text;
+  const message = `Delete ${comment.author}'s comment “${preview}” from #${item.id}?`;
+  const pending: PendingAction = {
+    actionId,
+    kind: "delete_comment",
+    message,
+    after: item,
+    comment,
+    expiresAt: new Date(expiresAt).toISOString(),
+  };
+  return {
+    output: {
+      ok: true,
+      action_id: actionId,
+      status: "awaiting_user_confirmation",
+      summary: message,
+      instruction: "Ask the user to confirm. Do not call confirm_action until they say yes.",
+    },
+    uiEvents: [{ type: "work_item_preview", action: pending }],
+  };
 }
 
 // ---------- confirmation ----------
@@ -784,6 +839,13 @@ async function confirmAction(actionId: string, { board, actions, userKey }: Tool
     return { output: { ok: true, created: brief(created) }, uiEvents: events };
   }
 
+  if (op.kind === "delete_comment") {
+    await board.deleteComment(op.id, op.commentId);
+    const detail = await board.getDetail(op.id);
+    if (detail) events.push({ type: "work_item_detail", detail, quiet: true });
+    return { output: { ok: true, deleted_comment: op.commentId, from: op.id }, uiEvents: events };
+  }
+
   const before = await board.get(op.id);
   if (!before) return fail(`Work item #${op.id} no longer exists.`);
   try {
@@ -793,6 +855,11 @@ async function confirmAction(actionId: string, { board, actions, userKey }: Tool
       parentTitle: op.changes.parentId !== undefined ? (op.parentTitle ?? null) : (item.parentTitle ?? before.parentTitle),
     };
     events.push({ type: "work_item_updated", item: updated, before });
+    // Comments and the description live in the detail view: refresh it.
+    if (op.changes.comment || op.changes.description !== undefined) {
+      const detail = await board.getDetail(op.id);
+      if (detail) events.push({ type: "work_item_detail", detail, quiet: true });
+    }
     return { output: { ok: true, updated: brief(updated) }, uiEvents: events };
   } catch (err) {
     if (err instanceof WorkItemError && err.code === "conflict") {

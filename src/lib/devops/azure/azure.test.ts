@@ -269,11 +269,48 @@ describe("AzureDevOpsBoard", () => {
     expect(sent).toEqual([
       { op: "test", path: "/rev", value: 3 },
       { op: "add", path: "/fields/System.State", value: "Closed" },
-      { op: "add", path: "/fields/System.History", value: "Done in PR 12" },
+      { op: "add", path: "/fields/System.History", value: "<div>Done in PR 12</div>" },
       { op: "add", path: "/fields/System.Tags", value: "api; shipped" },
       { op: "remove", path: "/relations/1" },
       { op: "add", path: "/relations/-", value: { rel: "System.LinkTypes.Hierarchy-Reverse", url: "https://dev.azure.com/acme/_apis/wit/workItems/6" } },
     ]);
+  });
+
+  it("writes a description as simple HTML, escaping what the user said", async () => {
+    let sent: unknown;
+    const { board } = await setup({
+      "PATCH /Fabrikam/_apis/wit/workitems/9": (body) => {
+        sent = body;
+        return dto(9, {});
+      },
+    });
+    await board.update(9, { description: "Speed up <search>.\n\n- p95 under 300 ms\n- no regressions" });
+    expect(sent).toEqual([
+      { op: "add", path: "/fields/System.Description", value: "<div>Speed up &lt;search&gt;.</div><div>- p95 under 300 ms<br>- no regressions</div>" },
+    ]);
+  });
+
+  it("reads comments with the item detail and deletes one by id", async () => {
+    const { board, calls } = await setup({
+      "GET /Fabrikam/_apis/wit/workitems/9": () => ({ ...dto(9, {}), relations: [] }),
+      "GET /Fabrikam/_apis/wit/workItems/9/comments": () => ({
+        comments: [
+          { id: 31, text: "<div>Shipped in <b>PR 12</b></div>", createdBy: { displayName: "Priya" }, createdDate: "2026-10-30T10:00:00Z" },
+          { id: 30, text: "old", isDeleted: true },
+        ],
+      }),
+      "DELETE /Fabrikam/_apis/wit/workItems/9/comments/31": () => new Response(null, { status: 204 }),
+    });
+    const detail = await board.getDetail(9);
+    expect(detail?.comments).toEqual([{ id: 31, text: "Shipped in PR 12", author: "Priya", createdAt: "2026-10-30T10:00:00Z" }]);
+    await board.deleteComment(9, 31);
+    const del = calls.find((c) => c.method === "DELETE")!;
+    expect(del.url.searchParams.get("api-version")).toBe("7.1-preview.4");
+  });
+
+  it("still shows an item when its comments can't be read", async () => {
+    const { board } = await setup({ "GET /Fabrikam/_apis/wit/workitems/9": () => ({ ...dto(9, {}), relations: [] }) });
+    expect((await board.getDetail(9))?.comments).toEqual([]);
   });
 
   it("reports a failed revision test as a conflict", async () => {

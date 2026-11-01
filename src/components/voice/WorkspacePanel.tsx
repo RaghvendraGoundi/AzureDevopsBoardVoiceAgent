@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { WorkspaceState } from "@/hooks/voice/workspaceReducer";
 import { ConfirmationCard } from "./ConfirmationCard";
-import { CloseIcon, CollapseRightIcon } from "./icons";
+import { BoardIcon, CloseIcon, CollapseRightIcon } from "./icons";
 import { StateBadge, WorkItemCard } from "./WorkItemCard";
+import { WorkItemDetailView } from "./WorkItemDetailView";
 
 interface Props {
   state: WorkspaceState;
@@ -15,16 +16,46 @@ interface Props {
   onClose: () => void;
   onResolve: (actionId: string, decision: "confirm" | "cancel") => Promise<void>;
   onDismissError: (id: number) => void;
+  /** Opening items and proposing comment or description changes from the screen. */
+  board: {
+    open: (id: number) => Promise<boolean>;
+    closeDetail: () => void;
+    proposeComment: (id: number, text: string) => Promise<boolean>;
+    proposeDescription: (id: number, text: string) => Promise<boolean>;
+    proposeDeleteComment: (id: number, commentId: number) => Promise<boolean>;
+  };
 }
 
 type Tab = "results" | "changes";
 
 /** What the assistant found and changed: results, the change waiting for a yes, and session activity. */
-export function WorkspacePanel({ state, variant, busy, onClose, onResolve, onDismissError }: Props) {
-  const { results, pending, activity, errors, activeTool, focusedId, flash, boardInfo } = state;
+export function WorkspacePanel({ state, variant, busy, onClose, onResolve, onDismissError, board }: Props) {
+  const { results, pending, activity, errors, activeTool, focusedId, flash, boardInfo, detail } = state;
   const [tab, setTab] = useState<Tab>("results");
   const loading = activeTool !== null && !pending;
   const changes = activity.filter((a) => a.kind !== "cancelled").length;
+  const scroller = useRef<HTMLDivElement>(null);
+  // Items opened from inside an item (a parent, a child), so "back" returns to where you were.
+  const [trail, setTrail] = useState<Array<{ id: number; title: string }>>([]);
+  useEffect(() => {
+    if (!detail) setTrail([]);
+  }, [detail]);
+  const openFromDetail = (id: number) => {
+    if (detail && id !== detail.id) setTrail((t) => [...t, { id: detail.id, title: detail.title }]);
+    void board.open(id);
+  };
+  const back = () => {
+    const prev = trail.at(-1);
+    if (prev) {
+      setTrail((t) => t.slice(0, -1));
+      void board.open(prev.id);
+    } else board.closeDetail();
+  };
+  const backLabel = trail.length
+    ? `Back to #${trail.at(-1)!.id}`
+    : results
+      ? `Back to ${results.items.length} ${results.items.length === 1 ? "item" : "items"}`
+      : null;
 
   // An item picked elsewhere (e.g. from a chat reply) scrolls into view.
   useEffect(() => {
@@ -35,10 +66,17 @@ export function WorkspacePanel({ state, variant, busy, onClose, onResolve, onDis
     );
   }, [focusedId]);
 
-  // A change waiting for a yes always brings Results to the front.
+  // A change waiting for a yes always brings Results to the front, scrolled to it.
   useEffect(() => {
-    if (pending) setTab("results");
+    if (!pending) return;
+    setTab("results");
+    requestAnimationFrame(() => scroller.current?.scrollTo({ top: 0, behavior: "smooth" }));
   }, [pending]);
+
+  // A newly opened item starts at its top.
+  useEffect(() => {
+    if (detail) scroller.current?.scrollTo({ top: 0 });
+  }, [detail?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sprint = boardInfo?.sprint;
   const subtitle = [sprint?.name, boardInfo?.project].filter(Boolean).join(" · ");
@@ -53,6 +91,9 @@ export function WorkspacePanel({ state, variant, busy, onClose, onResolve, onDis
             {sprint?.daysLeft != null && ` · ${sprint.daysLeft} days left`}
           </div>
         </div>
+        <a className="ibtn" href="/board" aria-label="Open the sprint board" title="Sprint board">
+          <BoardIcon size={18} />
+        </a>
         <button className="ibtn" onClick={onClose} aria-label="Close workspace">
           {variant === "sheet" ? <CloseIcon size={18} /> : <CollapseRightIcon size={18} />}
         </button>
@@ -68,7 +109,7 @@ export function WorkspacePanel({ state, variant, busy, onClose, onResolve, onDis
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-5 pt-4 pb-5" role="tabpanel" aria-labelledby="workspace-title">
+      <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-5 pt-4 pb-5" role="tabpanel" aria-labelledby="workspace-title">
         {errors.map((e) => (
           <div key={e.id} role="alert" className="card animate-rise flex items-start justify-between gap-3 border-danger/40! text-sm">
             <span className="text-[#ffb3bb]">{e.message}</span>
@@ -78,7 +119,21 @@ export function WorkspacePanel({ state, variant, busy, onClose, onResolve, onDis
           </div>
         ))}
 
-        {tab === "results" ? (
+        {tab === "results" && detail ? (
+          <>
+            {pending && <ConfirmationCard key={pending.actionId} action={pending} onResolve={onResolve} />}
+            <WorkItemDetailView
+              key={detail.id}
+              detail={detail}
+              backLabel={backLabel}
+              onBack={back}
+              onOpen={openFromDetail}
+              onProposeComment={board.proposeComment}
+              onProposeDescription={board.proposeDescription}
+              onProposeDeleteComment={board.proposeDeleteComment}
+            />
+          </>
+        ) : tab === "results" ? (
           <>
             {pending && <ConfirmationCard key={pending.actionId} action={pending} onResolve={onResolve} />}
             {results && (
@@ -95,7 +150,7 @@ export function WorkspacePanel({ state, variant, busy, onClose, onResolve, onDis
               ) : (
                 <div className={`flex flex-col gap-3 transition-opacity ${loading ? "opacity-50" : ""}`}>
                   {results.items.map((item, i) => (
-                    <WorkItemCard key={item.id} item={item} position={i + 1} focused={item.id === focusedId} flash={flash[item.id]} currentSprint={sprint?.name ?? null} />
+                    <WorkItemCard key={item.id} item={item} position={i + 1} focused={item.id === focusedId} flash={flash[item.id]} currentSprint={sprint?.name ?? null} onOpen={(id) => void board.open(id)} />
                   ))}
                   {results.items.length > 3 && <div className="listfade" aria-hidden />}
                 </div>

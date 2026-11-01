@@ -1,17 +1,19 @@
-import type { WorkItem, WorkItemPatch } from "@/lib/devops/types";
+import type { WorkItem, WorkItemComment, WorkItemDetail, WorkItemPatch } from "@/lib/devops/types";
 
 export type AgentStatus = "idle" | "connecting" | "listening" | "processing" | "speaking" | "error";
 export type ConnectionState = "disconnected" | "connecting" | "connected" | "failed";
 
 export interface PendingAction {
   actionId: string;
-  kind: "create" | "update";
+  kind: "create" | "update" | "delete_comment";
   message: string;
   /** For updates: the item before the change. */
   before?: WorkItem;
   /** The item as it will look after the change (for creates, a draft without a real id). */
   after: WorkItem;
   changes?: WorkItemPatch;
+  /** For delete_comment: the comment that would go. */
+  comment?: WorkItemComment;
   expiresAt: string;
 }
 
@@ -19,6 +21,8 @@ export interface PendingAction {
 export type WorkspaceEvent =
   | { type: "work_items_loaded"; title: string; items: WorkItem[] }
   | { type: "work_item_focused"; item: WorkItem }
+  /** One item opened in full: parents, children, comments. `quiet` refreshes it without bringing it to the front. */
+  | { type: "work_item_detail"; detail: WorkItemDetail; quiet?: boolean }
   | { type: "work_item_preview"; action: PendingAction }
   | { type: "confirmation_resolved"; actionId: string; outcome: "confirmed" | "cancelled" | "expired" }
   | { type: "work_item_updated"; item: WorkItem; before: WorkItem }
@@ -52,6 +56,7 @@ export const TOOL_LABELS: Record<string, string> = {
   get_work_item: "Looking up work item…",
   propose_create_work_item: "Preparing new work item…",
   propose_update_work_item: "Preparing update…",
+  propose_delete_comment: "Preparing to delete a comment…",
   confirm_action: "Updating work item…",
   cancel_action: "Cancelling…",
   wait_for_user: "Listening…",

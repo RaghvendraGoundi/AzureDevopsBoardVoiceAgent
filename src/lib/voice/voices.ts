@@ -14,31 +14,32 @@ export interface VoiceOption {
 export type VoiceEngineId = "realtime" | "live";
 
 export const REALTIME_VOICES: VoiceOption[] = [
-  { id: "marin", label: "Marin", detail: "Warm, natural" },
-  { id: "cedar", label: "Cedar", detail: "Calm, grounded" },
-  { id: "coral", label: "Coral", detail: "Bright and friendly" },
-  { id: "sage", label: "Sage", detail: "Clear and even" },
-  { id: "shimmer", label: "Shimmer", detail: "Light and upbeat" },
-  { id: "verse", label: "Verse", detail: "Expressive" },
-  { id: "ballad", label: "Ballad", detail: "Soft, storyteller" },
-  { id: "ash", label: "Ash", detail: "Relaxed, low" },
-  { id: "echo", label: "Echo", detail: "Steady, neutral" },
-  { id: "alloy", label: "Alloy", detail: "Neutral, classic" },
+  { id: "marin", label: "Marin", detail: "Warm and natural. The default" },
+  { id: "cedar", label: "Cedar", detail: "Calm, low and grounded" },
+  { id: "coral", label: "Coral", detail: "Bright, friendly and upbeat" },
+  { id: "sage", label: "Sage", detail: "Clear, even and composed" },
+  { id: "shimmer", label: "Shimmer", detail: "Light, airy and cheerful" },
+  { id: "verse", label: "Verse", detail: "Expressive and dynamic" },
+  { id: "ballad", label: "Ballad", detail: "Soft and gentle, a storyteller" },
+  { id: "ash", label: "Ash", detail: "Relaxed and confident" },
+  { id: "echo", label: "Echo", detail: "Steady and unhurried" },
+  { id: "alloy", label: "Alloy", detail: "Balanced and neutral" },
 ];
 
+// GPT-Live's own voices, described by accent and presentation as OpenAI lists them.
 export const LIVE_VOICES: VoiceOption[] = [
-  { id: "marin", label: "Marin", detail: "Warm, natural" },
-  { id: "cedar", label: "Cedar", detail: "Calm, grounded" },
-  { id: "gleam", label: "Gleam", detail: "North American · feminine" },
-  { id: "meridian", label: "Meridian", detail: "North American · masculine" },
-  { id: "vesper", label: "Vesper", detail: "British · masculine" },
-  { id: "willow", label: "Willow", detail: "Irish · feminine" },
-  { id: "stone", label: "Stone", detail: "Irish · masculine" },
-  { id: "quartz", label: "Quartz", detail: "Australian · feminine" },
-  { id: "ripple", label: "Ripple", detail: "Australian · masculine" },
-  { id: "delta", label: "Delta", detail: "Southern U.S. · feminine" },
-  { id: "cinder", label: "Cinder", detail: "Southern U.S. · masculine" },
-  { id: "beacon", label: "Beacon", detail: "Filipino · masculine" },
+  { id: "marin", label: "Marin", detail: "Warm and natural. The default" },
+  { id: "cedar", label: "Cedar", detail: "Calm, low and grounded" },
+  { id: "gleam", label: "Gleam", detail: "North American accent · feminine" },
+  { id: "meridian", label: "Meridian", detail: "North American accent · masculine" },
+  { id: "vesper", label: "Vesper", detail: "British accent · masculine" },
+  { id: "willow", label: "Willow", detail: "Irish accent · feminine" },
+  { id: "stone", label: "Stone", detail: "Irish accent · masculine" },
+  { id: "quartz", label: "Quartz", detail: "Australian accent · feminine" },
+  { id: "ripple", label: "Ripple", detail: "Australian accent · masculine" },
+  { id: "delta", label: "Delta", detail: "Southern U.S. accent · feminine" },
+  { id: "cinder", label: "Cinder", detail: "Southern U.S. accent · masculine" },
+  { id: "beacon", label: "Beacon", detail: "Filipino English accent · masculine" },
 ];
 
 export function voicesFor(engine: VoiceEngineId): VoiceOption[] {

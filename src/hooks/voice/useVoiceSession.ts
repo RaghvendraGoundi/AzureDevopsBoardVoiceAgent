@@ -217,6 +217,36 @@ export function useVoiceSession() {
     }
   }, []);
 
+  /**
+   * Board actions started from the screen: they run the same tools the
+   * assistant uses, so a write still shows a preview and waits for a yes.
+   */
+  const runFromScreen = useCallback(async (tool: string, args: Record<string, unknown>, note?: string) => {
+    try {
+      const result = await executeToolRemote(tool, args);
+      result.uiEvents.forEach(dispatch);
+      if (note && result.output.ok !== false) {
+        clientRef.current?.sendUiNote(`${note} Action id ${String(result.output.action_id ?? "none")}; wait for my yes or no.`);
+      }
+      return result.output.ok !== false;
+    } catch {
+      dispatch({ type: "error", message: "Couldn't reach the board service." });
+      return false;
+    }
+  }, []);
+
+  const board = {
+    /** Open an item in full (parents, children, comments). */
+    open: (id: number) => runFromScreen("get_work_item", { id }),
+    proposeComment: (id: number, comment: string) =>
+      runFromScreen("propose_update_work_item", { id, comment }, `On screen I asked to add a comment to #${id}.`),
+    proposeDescription: (id: number, description: string) =>
+      runFromScreen("propose_update_work_item", { id, description }, `On screen I asked to change the description of #${id}.`),
+    proposeDeleteComment: (id: number, commentId: number) =>
+      runFromScreen("propose_delete_comment", { id, comment_id: commentId }, `On screen I asked to delete comment ${commentId} on #${id}.`),
+    closeDetail: () => dispatch({ type: "close_detail" }),
+  };
+
   const startDemo = useCallback(async () => {
     if (clientRef.current || demoRunning) return;
     const ctrl = new AbortController();
@@ -327,6 +357,7 @@ export function useVoiceSession() {
     stopDemo,
     levels,
     dismissError: (id: number) => dispatch({ type: "dismiss_error", id }),
+    board,
     /** Highlight one of the listed items, e.g. from a reply that mentions it. */
     focusItem: (id: number) => {
       const item = state.results?.items.find((i) => i.id === id);

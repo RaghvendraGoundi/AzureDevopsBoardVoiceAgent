@@ -1,5 +1,5 @@
 import type { StateCategory, WorkItem } from "@/lib/devops/types";
-import { TypeIcon } from "./icons";
+import { FlagIcon, ParentIcon, TypeIcon } from "./icons";
 
 /** States that mean "stuck", shown in the attention colour whatever the process calls them. */
 const HOLD = /hold|block|wait|paus|imped/i;
@@ -20,9 +20,11 @@ interface Props {
   flash?: "created" | "updated";
   /** The current sprint's name: other sprints are called out on the card. */
   currentSprint?: string | null;
+  /** Opens an item (this one, or its parent) in full. */
+  onOpen?: (id: number) => void;
 }
 
-const typeTone = (type: string) => {
+export const typeTone = (type: string) => {
   const t = type.toLowerCase();
   if (t === "bug" || t === "impediment" || t === "issue") return "bug";
   if (t === "task") return "task";
@@ -30,7 +32,7 @@ const typeTone = (type: string) => {
   return "story";
 };
 
-export function WorkItemCard({ item, position, focused, flash, currentSprint }: Props) {
+export function WorkItemCard({ item, position, focused, flash, currentSprint, onOpen }: Props) {
   const who = item.assignedTo?.displayName ?? null;
   const offSprint = item.sprintName !== (currentSprint ?? null) ? (item.sprintName ?? "Backlog") : null;
   return (
@@ -53,22 +55,30 @@ export function WorkItemCard({ item, position, focused, flash, currentSprint }: 
         </span>
       </div>
       <h3 className="ct">
-        {item.url ? (
-          <a href={item.url} target="_blank" rel="noreferrer" className="hover:underline">
+        {onOpen ? (
+          <button className="titlebtn" onClick={() => onOpen(item.id)}>
             {item.title}
-          </a>
+          </button>
         ) : (
           item.title
         )}
       </h3>
-      {item.parentId && (
-        <p className="par" title={item.parentTitle ?? undefined}>
-          <ParentIcon />
-          <span className="truncate">
-            #{item.parentId} {item.parentTitle}
-          </span>
-        </p>
-      )}
+      {item.parentId &&
+        (onOpen ? (
+          <button className="par parbtn" onClick={() => onOpen(item.parentId!)} title={`Open #${item.parentId} ${item.parentTitle ?? ""}`}>
+            <ParentIcon />
+            <span className="truncate">
+              #{item.parentId} {item.parentTitle}
+            </span>
+          </button>
+        ) : (
+          <p className="par" title={item.parentTitle ?? undefined}>
+            <ParentIcon />
+            <span className="truncate">
+              #{item.parentId} {item.parentTitle}
+            </span>
+          </p>
+        ))}
       <div className="wmeta">
         <span className="who2">
           <span className="ava" aria-hidden>
@@ -91,15 +101,3 @@ export function WorkItemCard({ item, position, focused, flash, currentSprint }: 
     </article>
   );
 }
-
-const ParentIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden className="flex-none">
-    <path d="M5 5v6a3 3 0 0 0 3 3h11M15 10l4 4-4 4" />
-  </svg>
-);
-
-const FlagIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <path d="M6 21V4M6 5h11l-2 4 2 4H6" />
-  </svg>
-);

@@ -7,6 +7,7 @@ import type {
   BoardContext,
   CreateWorkItemInput,
   WorkItem,
+  WorkItemComment,
   WorkItemDetail,
   WorkItemPatch,
   WorkItemQuery,
@@ -19,6 +20,9 @@ interface BoardData {
   version: number;
   nextId: number;
   items: StoredItem[];
+  /** Discussion per item id, oldest first. Optional so older files keep working. */
+  comments?: Record<string, WorkItemComment[]>;
+  nextCommentId?: number;
 }
 
 export interface BoardStorage {
@@ -162,7 +166,7 @@ export class EmulatedBoard implements WorkItemRepository {
   }
 
   async getDetail(id: number): Promise<WorkItemDetail | null> {
-    const [{ items }, ctx] = await Promise.all([this.data(), this.context()]);
+    const [{ items, comments }, ctx] = await Promise.all([this.data(), this.context()]);
     const item = items.find((i) => i.id === id);
     if (!item) return null;
     const ancestors = [];
@@ -173,7 +177,7 @@ export class EmulatedBoard implements WorkItemRepository {
       p = parent.parentId;
     }
     const children = items.filter((i) => i.parentId === id).map((i) => this.view(i, items, ctx));
-    return { ...this.view(item, items, ctx), ancestors, children };
+    return { ...this.view(item, items, ctx), ancestors, children, comments: [...(comments?.[id] ?? [])].reverse() };
   }
 
   async create(input: CreateWorkItemInput): Promise<WorkItem> {
@@ -230,10 +234,29 @@ export class EmulatedBoard implements WorkItemRepository {
       if (patch.iterationPath !== undefined) item.iterationPath = patch.iterationPath;
       if (patch.parentId !== undefined) item.parentId = patch.parentId;
       if (patch.addTags?.length) item.tags = [...new Set([...item.tags, ...patch.addTags])];
-      if (patch.comment) item.description = `${item.description}\n\nComment: ${patch.comment}`.trim();
+      if (patch.description !== undefined) item.description = patch.description.trim();
+      if (patch.comment) {
+        data.comments ??= {};
+        data.nextCommentId ??= 1;
+        (data.comments[id] ??= []).push({
+          id: data.nextCommentId++,
+          text: patch.comment.trim(),
+          author: ctx.me.displayName,
+          createdAt: this.now().toISOString(),
+        });
+      }
       item.rev += 1;
       item.changedAt = this.now().toISOString();
       return this.view(item, data.items, ctx);
+    });
+  }
+
+  async deleteComment(itemId: number, commentId: number): Promise<void> {
+    await this.mutate((data) => {
+      const list = data.comments?.[itemId] ?? [];
+      const idx = list.findIndex((c) => c.id === commentId);
+      if (idx < 0) throw new WorkItemError(`Comment ${commentId} isn't on #${itemId}.`, "not_found");
+      list.splice(idx, 1);
     });
   }
 }

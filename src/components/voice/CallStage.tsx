@@ -116,20 +116,24 @@ export function CallStage({ state, mode, talking, muted, captions, demoRunning, 
         {word}
       </h1>
       {/* Before a call: the greeting here, and the hint under the orb (as designed). */}
-      <p className="mt-1.5 text-[15px] text-[#8ea6bf]">{idle ? greeting(boardInfo?.user) : sub}</p>
+      {!idle && <p className="mt-1.5 text-[15px] text-[#8ea6bf]">{sub}</p>}
 
       <button
-        className="orbbtn my-[clamp(4px,1.5vh,20px)] w-[min(440px,46vh,82cqw)]"
+        className={`orbbtn my-[clamp(4px,1.5vh,20px)] ${
+          // During a call the captions need room above the dock, so the orb gives up height.
+          live && captions ? "w-[min(clamp(180px,calc(100dvh-470px),380px),82cqw)]" : "w-[min(440px,46vh,82cqw)]"
+        }`}
         onClick={onOrb}
         aria-label={live ? (status === "speaking" ? "Interrupt the assistant" : "Assistant") : "Start voice session"}
       >
         <VoiceOrb state={orbStateFor(state.connection === "connecting" ? "connecting" : status, yourCall)} levels={levels} />
       </button>
 
-      {idle && <p className="mt-2 text-[15px] text-[#8fb0c8]">{sub}</p>}
+      {/* Before a call, as designed: the greeting under the orb; how to start sits at the bottom. */}
+      {idle && <p className="greet">{greeting(boardInfo?.user)}</p>}
 
       {captions && live && (you || them) && (
-        <div className={`px-4 ${narrowCaptions ? "max-w-[min(580px,calc(100vw-1000px))] min-[1360px]:max-w-[min(580px,calc(100vw-960px))]" : "max-w-[580px]"}`} aria-live="off">
+        <div className={`w-full px-4 ${narrowCaptions ? "max-w-[min(580px,max(280px,calc(100vw-900px)))]" : "max-w-[580px]"}`} aria-live="off">
           {you && (
             <p className="caph mb-1.5 line-clamp-2">
               <span className="capwho text-[#8fb0c8]!">YOU</span>&nbsp; {you.text || "…"}

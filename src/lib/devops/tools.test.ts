@@ -76,12 +76,49 @@ describe("list_work_items for portfolio levels", () => {
   });
 });
 
+describe("comments and descriptions", () => {
+  const confirm = (p: { output: Record<string, unknown> }) => run("confirm_action", { action_id: p.output.action_id });
+
+  it("adds a comment after a yes, then lists it with its id on the item", async () => {
+    await confirm(await run("propose_update_work_item", { id: 1024, comment: "Waiting on the security review" }));
+    const r = await run("get_work_item", { id: 1024 });
+    const comments = r.output.comments as Array<{ comment_id: number; by: string; text: string }>;
+    expect(comments[0]).toMatchObject({ by: "Test User", text: "Waiting on the security review" });
+    expect(r.uiEvents[0]).toMatchObject({ type: "work_item_detail", detail: { id: 1024 } });
+  });
+
+  it("deletes a comment only after a yes", async () => {
+    await confirm(await run("propose_update_work_item", { id: 1024, comment: "Typo comment" }));
+    const id = ((await run("get_work_item", { id: 1024 })).output.comments as Array<{ comment_id: number }>)[0].comment_id;
+    const p = await run("propose_delete_comment", { id: 1024, comment_id: id });
+    expect(p.output).toMatchObject({ ok: true, status: "awaiting_user_confirmation" });
+    expect(p.uiEvents[0]).toMatchObject({ type: "work_item_preview", action: { kind: "delete_comment", comment: { text: "Typo comment" } } });
+    expect(((await run("get_work_item", { id: 1024 })).output.comments as unknown[]).length).toBe(1);
+    const done = await confirm(p);
+    expect(done.output).toMatchObject({ ok: true, deleted_comment: id });
+    expect((await run("get_work_item", { id: 1024 })).output.comments).toEqual([]);
+  });
+
+  it("says which comments exist when the id is wrong", async () => {
+    const r = await run("propose_delete_comment", { id: 1024, comment_id: 999 });
+    expect(r.output).toMatchObject({ ok: false, comments: [] });
+  });
+
+  it("writes a description after a yes and shows it in the preview", async () => {
+    const p = await run("propose_update_work_item", { id: 1024, description: "Sign in with Entra ID.\n\n- Session refresh\n- Logout everywhere" });
+    expect(String(p.output.summary)).toMatch(/rewrite the description|add a description/);
+    await confirm(p);
+    expect((await deps.board.get(1024))?.description).toBe("Sign in with Entra ID.\n\n- Session refresh\n- Logout everywhere");
+  });
+});
+
 describe("get_work_item and get_sprint", () => {
   it("returns the parent chain and numbered children", async () => {
     const r = await run("get_work_item", { id: 1024 });
     expect(r.output.item).toMatchObject({ parents: ["Feature #1010 Secure sign-in (Active)", "Epic #1001 Customer portal v2 (Active)"] });
     expect((r.output.children as Brief[]).map((c) => c.position)).toEqual([1, 2]);
-    expect(r.uiEvents[0]).toMatchObject({ type: "work_items_loaded" });
+    // The item opens on screen with its parents, children and comments.
+    expect(r.uiEvents[0]).toMatchObject({ type: "work_item_detail", detail: { id: 1024, ancestors: [{ id: 1010 }, { id: 1001 }] } });
   });
 
   it("summarises the current sprint", async () => {

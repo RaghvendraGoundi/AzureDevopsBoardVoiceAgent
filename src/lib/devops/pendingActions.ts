@@ -5,7 +5,8 @@ export const ACTION_TTL_MS = 5 * 60 * 1000;
 
 export type PendingOperation =
   | { kind: "create"; input: CreateWorkItemInput; parentTitle: string | null }
-  | { kind: "update"; id: number; rev: number; changes: WorkItemPatch; parentTitle?: string | null };
+  | { kind: "update"; id: number; rev: number; changes: WorkItemPatch; parentTitle?: string | null }
+  | { kind: "delete_comment"; id: number; commentId: number };
 
 interface Entry {
   op: PendingOperation;

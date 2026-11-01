@@ -5,6 +5,7 @@ import type {
   CreateWorkItemInput,
   Person,
   WorkItem,
+  WorkItemComment,
   WorkItemDetail,
   WorkItemPatch,
   WorkItemQuery,
@@ -96,6 +97,28 @@ function person(v: unknown): Person | null {
 }
 
 const idFromUrl = (url: string) => Number(url.split("/").pop());
+
+/** The comments API is still a preview in 7.1. */
+const COMMENTS_API = "7.1-preview.4";
+
+interface CommentDto {
+  id: number;
+  text?: string;
+  createdBy?: { displayName?: string; uniqueName?: string };
+  createdDate?: string;
+  isDeleted?: boolean;
+}
+
+const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** Plain text → the simple HTML Azure DevOps stores: one paragraph per blank-line block, line breaks kept. */
+export function textToHtml(text: string): string {
+  return text
+    .trim()
+    .split(/\n\s*\n/)
+    .map((p) => `<div>${escapeHtml(p.trim()).replace(/\n/g, "<br>")}</div>`)
+    .join("");
+}
 
 export class AzureDevOpsBoard implements WorkItemRepository {
   constructor(
@@ -192,14 +215,42 @@ export class AzureDevOpsBoard implements WorkItemRepository {
     const [ctx, dto] = await Promise.all([this.context(), this.getWithRelations(id)]);
     if (!dto) return null;
     const childIds = (dto.relations ?? []).filter((r) => r.rel === CHILD_REL).map((r) => idFromUrl(r.url));
-    const [children, ancestors] = await Promise.all([this.batch(childIds, LIST_FIELDS), this.ancestors(dto)]);
+    const [children, ancestors, comments] = await Promise.all([this.batch(childIds, LIST_FIELDS), this.ancestors(dto), this.comments(id)]);
     const titles = new Map<number, string>([[dto.id, String(dto.fields["System.Title"] ?? "")]]);
     for (const a of ancestors) titles.set(a.id, a.title);
     return {
       ...this.toWorkItem(dto, ctx, titles),
       ancestors,
       children: children.map((c) => this.toWorkItem(c, ctx, titles)),
+      comments,
     };
+  }
+
+  /** The item's discussion, newest first. Missing comments never fail the detail view. */
+  private async comments(id: number): Promise<WorkItemComment[]> {
+    try {
+      const res = await this.client.request<{ comments?: CommentDto[] }>(
+        "GET",
+        `${this.client.projectUrl}/_apis/wit/workItems/${id}/comments`,
+        { apiVersion: COMMENTS_API, query: { $top: 50, order: "desc" } },
+      );
+      return (res.comments ?? [])
+        .filter((c) => !c.isDeleted)
+        .map((c) => ({
+          id: c.id,
+          text: htmlToText(c.text, 2000),
+          author: c.createdBy?.displayName ?? c.createdBy?.uniqueName ?? "Someone",
+          createdAt: c.createdDate ?? "",
+        }));
+    } catch {
+      return [];
+    }
+  }
+
+  async deleteComment(itemId: number, commentId: number): Promise<void> {
+    await this.client.request<void>("DELETE", `${this.client.projectUrl}/_apis/wit/workItems/${itemId}/comments/${commentId}`, {
+      apiVersion: COMMENTS_API,
+    });
   }
 
   /** Parent, grandparent, … up to the top (at most five levels). */
@@ -252,7 +303,8 @@ export class AzureDevOpsBoard implements WorkItemRepository {
     if (patch.priority !== undefined) set("Microsoft.VSTS.Common.Priority", patch.priority);
     if (patch.assignedTo !== undefined) set("System.AssignedTo", patch.assignedTo?.uniqueName ?? "");
     if (patch.iterationPath !== undefined) set("System.IterationPath", patch.iterationPath);
-    if (patch.comment) set("System.History", patch.comment);
+    if (patch.comment) set("System.History", textToHtml(patch.comment));
+    if (patch.description !== undefined) set("System.Description", textToHtml(patch.description));
 
     // Re-parenting and adding tags need the current links and tags.
     if (patch.parentId !== undefined || patch.addTags?.length) {

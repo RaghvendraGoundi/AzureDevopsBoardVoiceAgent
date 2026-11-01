@@ -1,5 +1,5 @@
 import type { BoardInfo } from "@/lib/devops/briefing";
-import type { WorkItem } from "@/lib/devops/types";
+import type { WorkItem, WorkItemDetail } from "@/lib/devops/types";
 import { TOOL_LABELS, type AgentStatus, type ConnectionState, type PendingAction, type VoiceEvent } from "@/types/voice";
 
 export interface TranscriptEntry {
@@ -39,6 +39,8 @@ export interface WorkspaceState {
   activeTool: string | null;
   transcript: TranscriptEntry[];
   results: { title: string; items: WorkItem[] } | null;
+  /** One item opened in full (from the assistant, or a click); shown over the results. */
+  detail: WorkItemDetail | null;
   focusedId: number | null;
   pending: PendingAction | null;
   activity: ActivityEntry[];
@@ -62,6 +64,7 @@ export const initialWorkspaceState: WorkspaceState = {
   activeTool: null,
   transcript: [],
   results: null,
+  detail: null,
   focusedId: null,
   pending: null,
   activity: [],
@@ -81,7 +84,9 @@ export type WorkspaceAction =
   | { type: "board_info"; info: BoardInfo | null }
   /** Shows a saved conversation (its transcript and board changes). */
   | { type: "load_conversation"; transcript: TranscriptEntry[]; activity: ActivityEntry[] }
-  | { type: "dismiss_session_summary" };
+  | { type: "dismiss_session_summary" }
+  /** Back from an item's detail to the list. */
+  | { type: "close_detail" };
 
 let errorSeq = 0;
 
@@ -189,6 +194,14 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
       };
     }
 
+    case "work_item_detail":
+      // A quiet refresh only updates an item that's already open.
+      if (action.quiet && state.detail?.id !== action.detail.id) return state;
+      return { ...state, detail: action.detail, focusedId: action.detail.id };
+
+    case "close_detail":
+      return { ...state, detail: null };
+
     case "work_item_preview":
       return {
         ...state,
@@ -208,6 +221,7 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
     case "work_item_updated":
       return {
         ...state,
+        detail: state.detail && state.detail.id === action.item.id ? { ...state.detail, ...action.item } : state.detail,
         results: state.results && { ...state.results, items: replaceItem(state.results.items, action.item) },
         focusedId: action.item.id,
         activity: [

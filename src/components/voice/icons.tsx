@@ -1,197 +1,104 @@
 /**
- * Icons from the variant B design (2px stroke, round caps). Decorative:
- * the buttons that use them carry the label.
+ * Icons from Lucide (lucide.dev, ISC licence): one consistent line set at
+ * a 1.75 stroke. Decorative: the buttons that use them carry the label.
  */
+
+import {
+  ArrowRight,
+  AudioLines,
+  BookOpen,
+  Bug,
+  Captions,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CornerDownRight,
+  Crown,
+  ExternalLink,
+  FileText,
+  Flag,
+  Hand,
+  History,
+  Keyboard,
+  Layers,
+  type LucideIcon,
+  MessageSquareText,
+  MessagesSquare,
+  Mic,
+  MicOff,
+  PanelLeftClose,
+  PanelRightClose,
+  Pencil,
+  PhoneOff,
+  Plus,
+  RotateCcw,
+  SquareCheckBig,
+  SquareKanban,
+  Trash2,
+  X,
+} from "lucide-react";
 
 type IconProps = { size?: number; className?: string };
 
-function Svg({ size = 18, className, children }: IconProps & { children: React.ReactNode }) {
+const icon = (Icon: LucideIcon, defaultSize = 18) =>
+  function DvIcon({ size = defaultSize, className }: IconProps) {
+    return <Icon size={size} strokeWidth={1.75} className={className} aria-hidden="true" />;
+  };
+
+/** The DevOps Voice mark: dotted rings in a soft tile, with the orange signal dot. */
+export function LogoMark({ size = 40 }: { size?: number }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-    >
-      {children}
+    <svg width={size} height={size} viewBox="0 0 42 42" aria-hidden="true">
+      <rect x="0.5" y="0.5" width="41" height="41" rx="13" fill="rgba(255,255,255,.04)" stroke="rgba(160,185,230,.26)" />
+      <circle cx="21" cy="21" r="12.5" fill="none" stroke="#cfd9ee" strokeWidth="2" strokeLinecap="round" strokeDasharray="0.1 4.3" />
+      <circle cx="21" cy="21" r="6.5" fill="none" stroke="rgba(207,217,238,.5)" strokeWidth="1.6" strokeLinecap="round" strokeDasharray="0.1 3.4" />
+      <circle cx="21" cy="21" r="3.3" fill="#FF5600" />
     </svg>
   );
 }
 
-/** The DevOps Voice mark: a ring, a dashed inner ring and an orange dot. */
-export function LogoMark({ size = 30 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true">
-      <circle cx="16" cy="16" r="13" stroke="#F6F6F1" strokeWidth="2" />
-      <circle cx="16" cy="16" r="7" stroke="#F6F6F1" strokeWidth="2" strokeDasharray="3 3" />
-      <circle cx="16" cy="16" r="2.5" fill="#FF5600" />
-    </svg>
-  );
-}
+export const MicIcon = icon(Mic);
+export const MuteIcon = icon(MicOff);
+export const CaptionsIcon = icon(Captions);
+export const InterruptIcon = icon(Hand);
+export const KeyboardIcon = icon(Keyboard);
+export const EndIcon = icon(PhoneOff);
+export const ChatIcon = icon(MessagesSquare);
+export const WorkspaceIcon = icon(Layers);
+export const CollapseLeftIcon = icon(PanelLeftClose);
+export const CollapseRightIcon = icon(PanelRightClose);
+export const CloseIcon = icon(X);
+export const CheckIcon = icon(Check);
+export const SendIcon = icon(ArrowRight);
+export const PlusIcon = icon(Plus);
+export const HistoryIcon = icon(History);
+export const TrashIcon = icon(Trash2);
+export const BoardIcon = icon(SquareKanban);
+export const ChevronLeftIcon = icon(ChevronLeft);
+export const ChevronRightIcon = icon(ChevronRight);
+export const ChevronDownIcon = icon(ChevronDown);
+export const ReplayIcon = icon(RotateCcw);
+export const WaveIcon = icon(AudioLines);
+export const ParentIcon = icon(CornerDownRight, 14);
+export const FlagIcon = icon(Flag, 13);
+export const CommentIcon = icon(MessageSquareText);
+export const DescriptionIcon = icon(FileText);
+export const EditIcon = icon(Pencil);
+export const ExternalIcon = icon(ExternalLink, 14);
 
-export const SettingsIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-    <circle cx="12" cy="12" r="3" />
-  </Svg>
-);
-export const ChevronLeftIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M15 18l-6-6 6-6" />
-  </Svg>
-);
-export const ChevronRightIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M9 18l6-6-6-6" />
-  </Svg>
-);
-export const ChevronDownIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M6 9l6 6 6-6" />
-  </Svg>
-);
-export const ReplayIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-    <path d="M3 3v5h5" />
-  </Svg>
-);
-export const WaveIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" />
-  </Svg>
-);
-export const MicIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <rect x="9" y="3" width="6" height="11" rx="3" />
-    <path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3" />
-  </Svg>
-);
-export const MuteIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <rect x="9" y="3" width="6" height="11" rx="3" />
-    <path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M3 3l18 18" />
-  </Svg>
-);
-export const CaptionsIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <rect x="3" y="5" width="18" height="14" rx="2" />
-    <path d="M7 11h4M13 11h4M7 15h10" />
-  </Svg>
-);
-export const InterruptIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M6 12V7M10 12V4M14 12V5M18 12V8M6 12c0 6 3 9 7 9s6-3 6-8v-1" />
-  </Svg>
-);
-export const KeyboardIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <rect x="2" y="6" width="20" height="12" rx="2" />
-    <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" />
-  </Svg>
-);
-export const EndIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M4 15c5-5 11-5 16 0l-2 3-3-1.5v-2.5c-2-.7-4-.7-6 0v2.5L6 18z" />
-  </Svg>
-);
-export const ChatIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M4 5h16v11H9l-5 4z" />
-  </Svg>
-);
-export const WorkspaceIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M12 3l9 5-9 5-9-5z" />
-    <path d="M3 13l9 5 9-5" />
-  </Svg>
-);
-export const CollapseLeftIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M15 5l-7 7 7 7" />
-  </Svg>
-);
-export const CollapseRightIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M9 5l7 7-7 7" />
-  </Svg>
-);
-export const CloseIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M5 5l14 14M19 5L5 19" />
-  </Svg>
-);
-export const CheckIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M4 12l5 5L20 6" />
-  </Svg>
-);
-export const SendIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M5 12h14M13 6l6 6-6 6" />
-  </Svg>
-);
-export const PlusIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M12 5v14M5 12h14" />
-  </Svg>
-);
-export const HistoryIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2" />
-  </Svg>
-);
-export const TrashIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
-  </Svg>
-);
-export const BoardIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <rect x="3" y="4" width="5" height="16" rx="1.5" />
-    <rect x="10" y="4" width="5" height="11" rx="1.5" />
-    <rect x="17" y="4" width="4" height="7" rx="1.5" />
-  </Svg>
-);
-
-/** Work item type glyphs, matched loosely by name so custom process types still get one. */
+/** The work item type's icon: task, bug, story/requirement, feature/initiative, epic. */
 export function TypeIcon({ type, size = 14 }: { type: string; size?: number }) {
   const t = type.toLowerCase();
-  if (t === "bug" || t === "impediment" || t === "issue")
-    return (
-      <Svg size={size}>
-        <circle cx="12" cy="13" r="5" />
-        <path d="M12 8V5M7 11 4 9M17 11l3-2M7 15l-3 2M17 15l3 2" />
-      </Svg>
-    );
-  if (t === "task")
-    return (
-      <Svg size={size}>
-        <rect x="4" y="4" width="16" height="16" rx="3" />
-        <path d="M8 12l3 3 5-6" />
-      </Svg>
-    );
-  if (t === "epic")
-    return (
-      <Svg size={size}>
-        <path d="M13 3L5 13h6l-1 8 8-10h-6l1-8z" />
-      </Svg>
-    );
-  if (t === "feature" || t === "initiative")
-    return (
-      <Svg size={size}>
-        <path d="M5 21V4M5 4h11l-2 4 2 4H5" />
-      </Svg>
-    );
-  return (
-    <Svg size={size}>
-      <path d="M6 4h12v16l-6-4-6 4V4z" />
-    </Svg>
-  );
+  const Icon =
+    t === "bug" || t === "impediment" || t === "issue"
+      ? Bug
+      : t === "task"
+        ? SquareCheckBig
+        : t === "epic"
+          ? Crown
+          : t === "feature" || t === "initiative"
+            ? Flag
+            : BookOpen;
+  return <Icon size={size} strokeWidth={1.75} aria-hidden="true" />;
 }

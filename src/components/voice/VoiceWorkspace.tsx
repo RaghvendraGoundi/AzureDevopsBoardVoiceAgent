@@ -8,7 +8,7 @@ import { CallStage } from "./CallStage";
 import { ChangeToast } from "./ChangeToast";
 import { ChatPanel } from "./ChatPanel";
 import { VoicePicker } from "./VoicePicker";
-import { ChatIcon, WorkspaceIcon } from "./icons";
+import { ChatIcon, KeyboardIcon, MicIcon, WorkspaceIcon } from "./icons";
 import { STARS_SHADOW } from "./sceneStars";
 import { SessionDialog } from "./SessionDialog";
 import { TopBar } from "./TopBar";
@@ -46,8 +46,8 @@ export function VoiceWorkspace() {
 
   // Results or a change to confirm bring the workspace in.
   useEffect(() => {
-    if (state.results || state.pending) setWorkOpen(true);
-  }, [state.results, state.pending]);
+    if (state.results || state.pending || state.detail) setWorkOpen(true);
+  }, [state.results, state.pending, state.detail]);
   // Space does what tapping the orb does: start a call, or cut the assistant off.
   // (In push-to-talk calls the session hook owns Space for talking.)
   const pttCall = live && s.mode === "ptt" && s.engine === "realtime";
@@ -127,6 +127,7 @@ export function VoiceWorkspace() {
       onClose={() => setWorkOpen(false)}
       onResolve={s.resolvePending}
       onDismissError={s.dismissError}
+      board={s.board}
     />
   );
 
@@ -143,15 +144,10 @@ export function VoiceWorkspace() {
         <TopBar
           connection={state.connection}
           demoRunning={s.demoRunning}
-          demoAvailable={state.boardInfo?.provider !== "azure"}
-          mode={s.mode}
           engine={s.engine}
-          onModeChange={s.setMode}
           voice={s.voice}
           onOpenPicker={() => setPickerOpen(true)}
           onEngineChange={s.setEngine}
-          onDemo={s.startDemo}
-          onStopDemo={s.stopDemo}
         />
 
         <div className="relative flex min-h-0 flex-1">
@@ -216,7 +212,31 @@ export function VoiceWorkspace() {
                 narrowCaptions={wide && (chatOpen || workOpen)}
                 onOrb={() => (live ? s.interrupt() : !locked && void s.start())}
               />
+
             </div>
+            {!locked && !s.demoRunning && (
+              <div className="idlebar">
+                <p className="hint">
+                  Tap the orb or press <kbd className="kbd">SPACE</kbd> to start
+                </p>
+                {s.engine === "realtime" && (
+                  <div className="seg" role="radiogroup" aria-label="How you talk">
+                    {(["handsfree", "ptt"] as const).map((m) => (
+                      <button key={m} role="radio" aria-checked={s.mode === m} onClick={() => s.setMode(m)}>
+                        {m === "handsfree" ? <MicIcon size={17} /> : <KeyboardIcon size={17} />}
+                        {m === "handsfree" ? "Hands-free" : "Push to talk"}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {/* The scripted demo confirms a real change, so it's only offered on the emulated board. */}
+                {state.boardInfo?.provider !== "azure" && (
+                  <button className="textbtn" onClick={s.startDemo}>
+                    Or watch a scripted demo
+                  </button>
+                )}
+              </div>
+            )}
             {(live || state.connection === "connecting") && (
             <div className="flex w-full justify-center pt-2 pb-5">
               <CallDock

@@ -22,6 +22,8 @@ export interface WorkItemRepository {
   create(input: CreateWorkItemInput): Promise<WorkItem>;
   /** Fails with "conflict" if the item is no longer at `expectedRev`. */
   update(id: number, patch: WorkItemPatch, expectedRev?: number): Promise<WorkItem>;
+  /** Removes one comment from an item's discussion. */
+  deleteComment(itemId: number, commentId: number): Promise<void>;
 }
 
 export type WorkItemErrorCode =

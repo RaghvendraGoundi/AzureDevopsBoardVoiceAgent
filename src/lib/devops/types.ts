@@ -52,10 +52,20 @@ export interface WorkItemRef {
   state: string;
 }
 
+export interface WorkItemComment {
+  id: number;
+  /** Plain text (HTML stripped). */
+  text: string;
+  author: string;
+  createdAt: string;
+}
+
 export interface WorkItemDetail extends WorkItem {
   /** Parent first, then grandparent, up to the top of the hierarchy. */
   ancestors: WorkItemRef[];
   children: WorkItem[];
+  /** Newest first. */
+  comments: WorkItemComment[];
 }
 
 export interface Sprint {
@@ -138,5 +148,7 @@ export interface WorkItemPatch {
   parentId?: number | null;
   /** Added to the item's discussion. */
   comment?: string;
+  /** Replaces the description (plain text; paragraphs separated by blank lines). */
+  description?: string;
   addTags?: string[];
 }

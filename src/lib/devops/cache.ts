@@ -93,6 +93,11 @@ export class CachedBoard implements WorkItemRepository {
     }
   }
 
+  async deleteComment(itemId: number, commentId: number): Promise<void> {
+    await this.inner.deleteComment(itemId, commentId);
+    this.afterWrite([itemId]);
+  }
+
   private afterWrite(ids: Array<number | undefined>) {
     this.cache.invalidate(`${this.prefix}q:`);
     for (const id of ids) {

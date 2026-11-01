@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { WorkItem } from "@/lib/devops/types";
 import type { PendingAction } from "@/types/voice";
-import { CheckIcon, CloseIcon, TypeIcon } from "./icons";
+import { CheckIcon, CloseIcon, CommentIcon, TrashIcon, TypeIcon } from "./icons";
 import { StateBadge } from "./WorkItemCard";
 
 type Field = { key: string; label: string; value: (i: WorkItem) => string };
@@ -30,6 +30,7 @@ export function ConfirmationCard({ action, onResolve }: Props) {
   const [busy, setBusy] = useState<"confirm" | "cancel" | null>(null);
   const { before, after } = action;
   const isUpdate = action.kind === "update" && !!before;
+  const isDelete = action.kind === "delete_comment";
 
   async function resolve(decision: "confirm" | "cancel") {
     setBusy(decision);
@@ -48,10 +49,43 @@ export function ConfirmationCard({ action, onResolve }: Props) {
       </button>
       <button onClick={() => resolve("confirm")} disabled={busy !== null} className="pill pri lg flex-[1.4]">
         <CheckIcon size={20} />
-        {busy === "confirm" ? (isUpdate ? "Applying…" : "Creating…") : isUpdate ? "Confirm" : "Create"}
+        {busy === "confirm" ? (isDelete ? "Deleting…" : isUpdate ? "Applying…" : "Creating…") : isDelete ? "Delete" : isUpdate ? "Confirm" : "Create"}
       </button>
     </div>
   );
+
+  if (isDelete && action.comment) {
+    const c = action.comment;
+    return (
+      <section className="card att animate-rise p-5!" aria-label="Comment deletion waiting for your confirmation">
+        <div className="flex items-center justify-between">
+          <span className="att-label">
+            <i aria-hidden />
+            Delete a comment · waiting for your yes
+          </span>
+          <span className="sub2">Voice or tap</span>
+        </div>
+        <div className="meta mt-4">
+          <span className="tg">
+            <TypeIcon type={after.type} />
+            {after.type}
+          </span>
+          <span>#{after.id}</span>
+        </div>
+        <h3 className="ttl mt-2! mb-3! text-[18px]!">{after.title}</h3>
+        <blockquote className="cmt gone">
+          <p className="cmt-who">
+            <TrashIcon size={14} />
+            {c.author}
+            {c.createdAt && <em>{new Date(c.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</em>}
+          </p>
+          <p className="cmt-text">{c.text}</p>
+        </blockquote>
+        <p className="sub2 mt-3">The comment stays until you confirm. Deleting can't be undone.</p>
+        {buttons}
+      </section>
+    );
+  }
 
   if (!isUpdate) {
     const chips = FIELDS.filter((f) => f.key !== "parent" && (f.key !== "tags" || after.tags.length > 0));
@@ -152,7 +186,21 @@ export function ConfirmationCard({ action, onResolve }: Props) {
         </dl>
       )}
 
-      {action.changes?.comment && <p className="sub2 mb-1.5">Note to add: “{action.changes.comment}”</p>}
+      {action.changes?.description !== undefined && (
+        <div className="mb-3">
+          <p className="lab mb-1.5">{before.description ? "New description" : "Description to add"}</p>
+          <p className="desc-preview">{action.changes.description || "(empty)"}</p>
+        </div>
+      )}
+      {action.changes?.comment && (
+        <blockquote className="cmt new mb-3">
+          <p className="cmt-who">
+            <CommentIcon size={14} />
+            New comment
+          </p>
+          <p className="cmt-text">{action.changes.comment}</p>
+        </blockquote>
+      )}
       <p className="sub2">Nothing changes on the board until you confirm.</p>
       {buttons}
     </section>
