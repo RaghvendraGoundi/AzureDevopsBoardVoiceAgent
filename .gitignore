@@ -7,3 +7,11 @@ next-env.d.ts
 
 # generated voice test clips (scripts/voice-test)
 public/__voice_test
+
+# local tooling and scratch output
+.claude/
+design-screenshots/
+.DS_Store
+coverage/
+*.pyc
+__pycache__/

@@ -1,13 +1,19 @@
 {
   "name": "voice-devops-agent",
   "version": "0.1.0",
+  "description": "A voice-first assistant for Azure DevOps Boards: talk to your sprint, with every change previewed and confirmed.",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit",
     "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run lint && npm test",
     "board:reset": "node scripts/reset-board.mjs",
     "voice:audio": "node scripts/voice-test/make-audio.mjs",
     "design:capture": "node scripts/voice-test/make-audio.mjs design-tour && node scripts/voice-test/capture.mjs"

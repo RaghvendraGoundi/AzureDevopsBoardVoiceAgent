@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Azure DevOps Boards bootstrap for:
-  Organization: your-org
+  Organization: $AZDO_ORG (your Azure DevOps organization)
   Project:      MyWork
 
 What it does (every step is safe to re-run):
@@ -25,10 +25,12 @@ What it does (every step is safe to re-run):
 
 Run (macOS/Linux):
   python3 -m pip install requests
+  export AZDO_ORG="your-org"
   export AZDO_PAT="..."          # or leave it unset and paste it at the prompt
   python3 scripts/azure_boards_setup.py
 
 PowerShell:
+  $env:AZDO_ORG = "your-org"
   $env:AZDO_PAT = "..."
   python .\\scripts\\azure_boards_setup.py
 
@@ -61,7 +63,7 @@ try:
 except ImportError:  # pragma: no cover - only hit when requests is missing
     requests = None  # type: ignore[assignment]
 
-ORG = "your-org"
+ORG = os.environ.get("AZDO_ORG", "").strip()
 PROJECT = "MyWork"
 PROCESS_NAME = "MyWork-Workflow"
 TEAM_NAME = "MyWork Team"
@@ -1186,10 +1188,7 @@ def seed_work_items(
 
 
 def read_pat() -> str:
-    pat = os.environ.get(
-        "AZDO_PAT",
-        "",
-    ).strip()
+    pat = os.environ.get("AZDO_PAT", "").strip()
     if not pat and sys.stdin.isatty():
         pat = getpass.getpass("Azure DevOps PAT (input hidden): ").strip()
     if not pat:
@@ -1249,6 +1248,8 @@ def main() -> None:
         describe_plan(plan, sprints, args.today)
         return
 
+    if not ORG:
+        sys.exit("Set AZDO_ORG to your Azure DevOps organization name.")
     ado = AzureDevOps(ORG, read_pat())
     log(f"Azure DevOps: {ORG}/{PROJECT}, team {TEAM_NAME}\n")
 
