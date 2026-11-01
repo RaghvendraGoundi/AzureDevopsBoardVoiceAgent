@@ -67,7 +67,9 @@ export function defaultChildType(ctx: BoardContext, parentType: string): string 
 }
 
 export function hierarchyLabel(ctx: BoardContext): string {
-  return ctx.hierarchy.map((l) => l.types.join(" / ")).join(" → ");
+  return ctx.hierarchy
+    .map((l) => (l.types.length === 1 && norm(l.name).replace(/s$/, "") === norm(l.types[0]) ? l.types[0] : `${l.name} (${l.types.join(" / ")})`))
+    .join(" → ");
 }
 
 const CATEGORY_ALIASES: Array<[RegExp, StateCategory]> = [
@@ -217,7 +219,7 @@ export function summarizeBoard(ctx: BoardContext, now = new Date()): string {
     cur
       ? `- Current sprint: ${cur.name} (${fmt(cur.startDate)} to ${fmt(cur.finishDate)}, ${daysLeft(cur, now)} days left).${next ? ` Next sprint: ${next.name}.` : ""}`
       : "- The team has no current sprint.",
-    `- Hierarchy, top to bottom: ${hierarchyLabel(ctx)}.`,
+    `- Hierarchy, top to bottom: ${hierarchyLabel(ctx)}. Each item sits under the level directly above it; use these type names, not ones from other processes.`,
   ];
   if (ctx.bugTypes.length && ctx.bugsBehavior !== "off") {
     lines.push(`- ${ctx.bugTypes.join(", ")} items sit alongside ${ctx.bugsBehavior === "asTasks" ? "tasks" : "requirements"}.`);

@@ -63,6 +63,19 @@ describe("list_work_items", () => {
   });
 });
 
+describe("list_work_items for portfolio levels", () => {
+  it("lists features across the backlog and the whole team by default", async () => {
+    const r = await run("list_work_items", { type: "feature" });
+    expect(items(r).map((i) => i.id).sort()).toEqual([1010, 1011, 1012]);
+  });
+
+  it("falls back to any type when the guessed type has no title match", async () => {
+    const r = await run("list_work_items", { type: "feature", search: "customer portal" });
+    expect(items(r).map((i) => i.id)).toEqual([1001]);
+    expect(r.output.note).toMatch(/No Feature matched/);
+  });
+});
+
 describe("get_work_item and get_sprint", () => {
   it("returns the parent chain and numbered children", async () => {
     const r = await run("get_work_item", { id: 1024 });
@@ -149,6 +162,24 @@ describe("create flow", () => {
     const r = await run("propose_create_work_item", { title: "Add logging to sign-in", type: "task" });
     expect(r.output).toMatchObject({ ok: false, needs_parent: true, parent_types: ["User Story", "Bug"] });
     expect((r.output.candidates as Brief[]).map((c) => c.id)).toContain(1024);
+  });
+
+  it("offers backlog features (not just this sprint's) as parents for a new story", async () => {
+    const r = await run("propose_create_work_item", { title: "Improve voice agent", type: "story" });
+    expect(r.output).toMatchObject({ needs_parent: true, parent_types: ["Feature"] });
+    expect((r.output.candidates as Brief[]).map((c) => c.id)).toEqual(expect.arrayContaining([1010, 1011, 1012]));
+  });
+
+  it("finds the parent from the words the user said", async () => {
+    const p = await run("propose_create_work_item", { title: "Improve voice agent", type: "story", parent: "public API hardening" });
+    expect(p.output).toMatchObject({ ok: true });
+    expect(String(p.output.summary)).toMatch(/under Feature #1011/);
+  });
+
+  it("says when the named parent is at the wrong level", async () => {
+    const p = await run("propose_create_work_item", { title: "Improve voice agent", type: "story", parent: "customer portal v2" });
+    expect(p.output).toMatchObject({ ok: false, parent_types: ["Feature"] });
+    expect(String(p.output.error)).toMatch(/#1001 “Customer portal v2” is an Epic/);
   });
 
   it("creates a task under its story, in the story's sprint, assigned to me", async () => {

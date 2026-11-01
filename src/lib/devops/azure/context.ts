@@ -50,8 +50,11 @@ export function toItemPath(path: string): string {
 }
 
 function level(dto: BacklogDto, kind: BacklogLevel["kind"], rank: number): BacklogLevel {
-  const types = dto.workItemTypes.map((t) => t.name);
-  return { name: dto.name, kind, rank, types, defaultType: dto.defaultWorkItemType?.name ?? types[0] };
+  const all = dto.workItemTypes.map((t) => t.name);
+  const defaultType = dto.defaultWorkItemType?.name ?? all[0];
+  // The level's default type first: it's the one the team actually uses ("Initiative", not "Feature").
+  const types = [defaultType, ...all.filter((t) => t !== defaultType)];
+  return { name: dto.name, kind, rank, types, defaultType };
 }
 
 export function buildHierarchy(cfg: BacklogConfigDto): BacklogLevel[] {

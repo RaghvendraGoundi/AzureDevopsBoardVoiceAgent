@@ -60,6 +60,7 @@ const schemas = {
     title: z.string().trim().min(3).max(255),
     type: word.optional(),
     parent_id: idSchema.optional(),
+    parent: z.string().trim().min(1).max(200).optional(),
     no_parent: z.boolean().optional(),
     sprint: word.optional(),
     assignee: word.optional(),
@@ -133,13 +134,14 @@ export const toolDefinitions = [
     type: "function",
     name: "propose_create_work_item",
     description:
-      "Prepare (but do NOT create) a new work item and show a preview. Defaults: assigned to the user, current sprint, priority 2, the parent's area. Items below the top of the hierarchy belong under a parent: if parent_id is missing this returns needs_parent with candidates instead. Returns an action_id; nothing is created until confirm_action.",
+      "Prepare (but do NOT create) a new work item and show a preview. Defaults: assigned to the user, current sprint, priority 2, the parent's area. Items below the top of the hierarchy belong under a parent: pass parent_id, or the parent's title words as parent. Without either this returns needs_parent with candidates instead. Returns an action_id; nothing is created until confirm_action.",
     parameters: {
       type: "object",
       properties: {
         title: str("Concise title, e.g. 'Add logging to payment service'."),
         type: str("In the user's words, e.g. 'task', 'bug', 'story'. Defaults to the usual child of the parent, or a task."),
         parent_id: { type: "integer", description: "The item this belongs under." },
+        parent: str("When you don't know the parent's id: words from its title, as the user said them (e.g. 'observability and alerting'). Matched against every type allowed as a parent."),
         no_parent: { type: "boolean", description: "Only when the user explicitly wants no parent." },
         sprint: str("'current' (default), 'next', 'backlog', or a sprint name."),
         assignee: str("'me' (default), 'unassigned', or a teammate's name."),
@@ -368,8 +370,11 @@ function withUnresolved<T>(fn: () => Promise<T>): Promise<T | ToolResponse> {
 async function listWorkItems(args: Args<"list_work_items">, { board }: ToolDeps): Promise<ToolResponse> {
   return withUnresolved(async () => {
     const ctx = await board.context();
-    // A search or a parent means "find this", so don't silently limit it to my sprint.
-    const scoped = !!args.search || args.parent_id !== undefined;
+    const types = args.type ? [typeFor(ctx, args.type)] : undefined;
+    // A search, a parent or a portfolio type (epics, initiatives…, which sit on the backlog
+    // and often belong to nobody) means "find this", so don't silently limit it to my sprint.
+    const portfolio = !!types && levelOf(ctx, types[0])?.kind === "portfolio";
+    const scoped = !!args.search || args.parent_id !== undefined || portfolio;
     const assignee = assigneeFilter(ctx, args.assignee ?? (scoped ? "anyone" : "me"));
     const sprintArg = args.sprint ?? (scoped ? "any" : "current");
     let iteration: string | undefined;
@@ -382,10 +387,9 @@ async function listWorkItems(args: Args<"list_work_items">, { board }: ToolDeps)
         sprintLabel = iteration === ctx.backlogIteration ? "backlog" : sprintNameFor(ctx, iteration);
       }
     }
-    const types = args.type ? [typeFor(ctx, args.type)] : undefined;
     const states = statesFor(ctx, args.state ?? (scoped ? "all" : "open"), types);
 
-    const items = await board.query({
+    let items = await board.query({
       assignee,
       iteration: iteration === ctx.backlogIteration ? "backlog" : iteration,
       types,
@@ -394,10 +398,23 @@ async function listWorkItems(args: Args<"list_work_items">, { board }: ToolDeps)
       text: args.search ? searchText(args.search) : undefined,
       top: args.limit ?? 20,
     });
+    // The model often guesses the type ("feature" for an initiative): the title is what counts.
+    let otherTypes = false;
+    if (items.length === 0 && types && args.search) {
+      items = await board.query({
+        assignee,
+        iteration: iteration === ctx.backlogIteration ? "backlog" : iteration,
+        states: statesFor(ctx, args.state ?? "all"),
+        parentId: args.parent_id,
+        text: searchText(args.search),
+        top: args.limit ?? 20,
+      });
+      otherTypes = items.length > 0;
+    }
 
     const who =
       assignee.kind === "me" ? "Your" : assignee.kind === "person" ? `${assignee.person.displayName}'s` : assignee.kind === "unassigned" ? "Unassigned" : "All";
-    const what = types ? `${types[0].toLowerCase()} items` : "items";
+    const what = types && !otherTypes ? `${types[0].toLowerCase()} items` : "items";
     const title = [
       `${who} ${args.state ?? (scoped ? "" : "open")} ${what}`.replace(/\s+/g, " "),
       sprintLabel ? `· ${sprintLabel === "backlog" ? "backlog" : sprintLabel}` : "",
@@ -413,6 +430,7 @@ async function listWorkItems(args: Args<"list_work_items">, { board }: ToolDeps)
         count: items.length,
         ...(sprintLabel && { sprint: sprintLabel }),
         items: items.map((item, i) => brief(item, i + 1)),
+        ...(otherTypes && { note: `No ${types![0]} matched; these are other types with that title.` }),
         ...(items.length === 0 && !scoped && { hint: "Nothing matched. Try sprint 'any' or assignee 'anyone'." }),
       },
       uiEvents: [{ type: "work_items_loaded", title, items }],
@@ -487,12 +505,22 @@ async function getSprint(args: Args<"get_sprint">, { board }: ToolDeps): Promise
 async function proposeCreate(args: Args<"propose_create_work_item">, { board, actions, userKey }: ToolDeps): Promise<ToolResponse> {
   return withUnresolved(async () => {
     const ctx = await board.context();
-    const parent = args.parent_id ? await board.get(args.parent_id) : null;
+    let parent = args.parent_id ? await board.get(args.parent_id) : null;
     if (args.parent_id && !parent) return fail(`Work item #${args.parent_id} does not exist.`);
 
-    const type = args.type
+    const typeArg = args.type
       ? typeFor(ctx, args.type)
-      : ((parent && defaultChildType(ctx, parent.type)) ?? ctx.hierarchy.find((l) => l.kind === "task")?.defaultType ?? Object.keys(ctx.types)[0]);
+      : ((parent && defaultChildType(ctx, parent.type)) ?? null);
+    if (!parent && args.parent && !args.parent_id) {
+      const found = await findParent(ctx, board, args.parent, typeArg);
+      if ("response" in found) return found.response;
+      parent = found.parent;
+    }
+    const type =
+      typeArg ??
+      (parent && defaultChildType(ctx, parent.type)) ??
+      ctx.hierarchy.find((l) => l.kind === "task")?.defaultType ??
+      Object.keys(ctx.types)[0];
     const level = levelOf(ctx, type);
     const parentTypes = parentTypesFor(ctx, type);
 
@@ -582,9 +610,12 @@ async function proposeCreate(args: Args<"propose_create_work_item">, { board, ac
 /** Offers likely parents (the user's open ones in this sprint first) instead of creating an orphan. */
 async function needsParent(ctx: BoardContext, board: WorkItemRepository, type: string, parentTypes: string[]): Promise<ToolResponse> {
   const open = statesInCategories(ctx, OPEN_CATEGORIES, parentTypes);
-  const sprint = currentSprint(ctx)?.path;
-  let candidates = await board.query({ assignee: { kind: "me" }, iteration: sprint, types: parentTypes, states: open, top: 8 });
-  if (candidates.length === 0) candidates = await board.query({ iteration: sprint, types: parentTypes, states: open, top: 8 });
+  // Requirement-level parents live in sprints; portfolio parents (features, initiatives…) on the backlog.
+  const parentLevel = levelOf(ctx, parentTypes[0]);
+  const sprint = parentLevel?.kind === "portfolio" ? undefined : currentSprint(ctx)?.path;
+  const mine = await board.query({ assignee: { kind: "me" }, iteration: sprint, types: parentTypes, states: open, top: 10 });
+  const others = mine.length >= 10 ? [] : await board.query({ iteration: sprint, types: parentTypes, states: open, top: 10 });
+  const candidates = [...mine, ...others.filter((o) => !mine.some((m) => m.id === o.id))].slice(0, 10);
   return {
     output: {
       ok: false,
@@ -592,10 +623,57 @@ async function needsParent(ctx: BoardContext, board: WorkItemRepository, type: s
       type,
       parent_types: parentTypes,
       candidates: candidates.map((c, i) => brief(c, i + 1)),
-      instruction: `Ask which ${parentTypes.join(" or ")} this ${type} belongs under, naming the likely candidates. Then propose again with parent_id. Only if the user says it has no parent, propose again with no_parent: true.`,
+      instruction: `Ask which ${parentTypes.join(" or ")} this ${type} belongs under, naming two or three of the candidates. Then propose again with parent_id, or with parent set to the title words the user says. Only if the user says it has no parent, propose again with no_parent: true.`,
     },
     uiEvents: candidates.length ? [{ type: "work_items_loaded", title: `Which ${parentTypes[0].toLowerCase()} does it go under?`, items: candidates }] : [],
   };
+}
+
+/**
+ * The parent the user named in words. Searches every type allowed above the
+ * new item (an "initiative" the model calls a "feature" still matches), and
+ * says plainly when the title only matches an item at the wrong level.
+ */
+const an = (word: string) => `${/^[aeiou]/i.test(word) ? "an" : "a"} ${word}`;
+
+async function findParent(
+  ctx: BoardContext,
+  board: WorkItemRepository,
+  words: string,
+  childType: string | null,
+): Promise<{ parent: WorkItem } | { response: ToolResponse }> {
+  const allowed = childType ? parentTypesFor(ctx, childType) : [];
+  const text = searchText(words);
+  const all = statesInCategories(ctx, STATE_CATEGORIES.filter((c) => c !== "Removed"));
+  const matches = await board.query({ text, types: allowed.length ? allowed : undefined, states: all, top: 10 });
+  const exact = matches.filter((m) => searchText(m.title) === text);
+  if (matches.length === 1 || exact.length === 1) return { parent: exact[0] ?? matches[0] };
+  if (matches.length > 1) {
+    return {
+      response: {
+        output: {
+          ok: false,
+          needs_parent: true,
+          parent_types: allowed,
+          candidates: matches.map((c, i) => brief(c, i + 1)),
+          instruction: "Several items match. Ask which one, naming them briefly, then propose again with its parent_id.",
+        },
+        uiEvents: [{ type: "work_items_loaded", title: `Matching “${words}”`, items: matches }],
+      },
+    };
+  }
+  const elsewhere = allowed.length ? await board.query({ text, states: all, top: 5 }) : [];
+  if (elsewhere.length) {
+    return {
+      response: fail(
+        `Nothing that a ${childType} can go under matches “${words}”. ${elsewhere
+          .map((e) => `#${e.id} “${e.title}” is ${an(e.type)}`)
+          .join("; ")}, and ${an(childType!)} belongs under ${an(allowed.join(" or "))}.`,
+        { parent_types: allowed, other_matches: elsewhere.map((e, i) => brief(e, i + 1)) },
+      ),
+    };
+  }
+  return { response: fail(`Nothing on the board matches “${words}”.`, { parent_types: allowed }) };
 }
 
 async function proposeUpdate(args: Args<"propose_update_work_item">, { board, actions, userKey }: ToolDeps): Promise<ToolResponse> {
