@@ -5,6 +5,7 @@ import { runDemo } from "@/lib/voice/demoScript";
 import { LiveClient } from "@/lib/voice/liveClient";
 import { RealtimeClient, type InputMode, type SessionCredentials } from "@/lib/voice/realtimeClient";
 import { executeToolRemote, fetchSessionCredentials, resolveActionRemote } from "@/lib/voice/toolExecutor";
+import { greetingInstruction } from "@/lib/voice/greeting";
 import { voicesFor } from "@/lib/voice/voices";
 import type { BoardInfo } from "@/lib/devops/briefing";
 import type { VoiceEvent } from "@/types/voice";
@@ -42,6 +43,8 @@ export function useVoiceSession() {
   const { ensureConversation, newConversation } = conversations;
   // Whether the open conversation already has turns, without making start() depend on the transcript.
   const hasHistory = useRef(false);
+  const boardInfoRef = useRef<BoardInfo | null>(null);
+  boardInfoRef.current = state.boardInfo;
   hasHistory.current = state.transcript.some((e) => e.final && e.text.trim());
 
   /** Mint a session key ahead of time so pressing Start doesn't wait on it. */
@@ -92,6 +95,8 @@ export function useVoiceSession() {
       if (text && !client.sendText(text)) {
         dispatch({ type: "error", message: "Typing works with the Realtime model. Say it instead, or switch models." });
       }
+      // The assistant speaks first, unless the call started with something the user typed.
+      if (!text) client.greet(greetingInstruction(boardInfoRef.current, hasHistory.current));
     } catch {
       // The client already emitted a failed connection event with the reason.
       clientRef.current = null;

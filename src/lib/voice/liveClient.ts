@@ -248,6 +248,11 @@ export class LiveClient {
     if (this.audioEl) this.audioEl.muted = this.outputMuted || this.silenced;
   }
 
+  /** The assistant opens the call. GPT-Live speaks commentary (thinking stays silent). */
+  greet(instruction: string) {
+    this.send({ type: "session.commentary.append", event_id: this.nextId("greet"), delegation_id: null, content: instruction });
+  }
+
   /** Tells the assistant quietly about something that happened on screen. */
   sendUiNote(text: string) {
     this.send({ type: "session.thinking.append", event_id: this.nextId("note"), delegation_id: null, content: `[ui] ${text}` });

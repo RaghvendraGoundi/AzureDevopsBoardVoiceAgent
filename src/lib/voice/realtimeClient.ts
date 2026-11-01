@@ -321,6 +321,15 @@ export class RealtimeClient {
     }, 200);
   }
 
+  /** The assistant opens the call: a private instruction (e.g. "greet the user"), then a reply. */
+  greet(instruction: string) {
+    this.send({
+      type: "conversation.item.create",
+      item: { type: "message", role: "system", content: [{ type: "input_text", text: instruction }] },
+    });
+    this.requestResponse();
+  }
+
   /** Tells the model about something the user did on screen (e.g. pressed Confirm). */
   sendUiNote(text: string) {
     this.send({
