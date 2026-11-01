@@ -85,6 +85,9 @@ export class LiveClient {
   private sessionReady: (() => void) | null = null;
 
   private seq = 0;
+  private outputMuted = false;
+  /** The current reply was interrupted; unmuted when it ends. */
+  private silenced = false;
   /** Makes transcript ids unique across sessions of the same conversation. */
   private readonly sessionTag = Date.now().toString(36);
   private user: Utterance | null = null;
@@ -132,7 +135,10 @@ export class LiveClient {
       this.audioEl.autoplay = true;
       pc.ontrack = (e) => {
         const [stream] = e.streams;
-        if (this.audioEl) this.audioEl.srcObject = stream;
+        if (this.audioEl) {
+          this.audioEl.srcObject = stream;
+          this.audioEl.muted = this.outputMuted;
+        }
         this.outAnalyser = this.analyse(stream);
       };
       pc.onconnectionstatechange = () => {
@@ -189,6 +195,32 @@ export class LiveClient {
   setMuted(muted: boolean) {
     this.mic?.getAudioTracks().forEach((t) => (t.enabled = !muted));
     this.send({ type: muted ? "session.input_audio.mute" : "session.input_audio.unmute", event_id: this.nextId("mute") });
+  }
+
+  /** Silences the assistant's voice (the mic is separate: setMuted). */
+  setOutputMuted(muted: boolean) {
+    this.outputMuted = muted;
+    this.applyOutputMute();
+  }
+
+  /**
+   * GPT-Live has no way to cancel a reply, so "stop talking" silences the
+   * rest of the current one; the next reply is heard again.
+   */
+  stopSpeaking() {
+    if (!this.assistant) return;
+    this.silenced = true;
+    this.applyOutputMute();
+    this.emit({ type: "assistant_interrupted" });
+  }
+
+  /** Typed turns aren't supported by GPT-Live. */
+  sendText(_text: string): boolean {
+    return false;
+  }
+
+  private applyOutputMute() {
+    if (this.audioEl) this.audioEl.muted = this.outputMuted || this.silenced;
   }
 
   /** Tells the assistant quietly about something that happened on screen. */
@@ -380,6 +412,10 @@ export class LiveClient {
     clearTimeout(a.timer);
     this.assistant = null;
     this.emit({ type: "assistant_transcript", id: a.id, text: a.text.trim(), final: true });
+    if (this.silenced) {
+      this.silenced = false;
+      this.applyOutputMute();
+    }
     if (this.ending) {
       this.hangUp();
       return;

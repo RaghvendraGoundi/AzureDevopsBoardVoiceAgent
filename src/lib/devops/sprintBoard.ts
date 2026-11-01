@@ -36,7 +36,11 @@ export async function loadSprintBoard(headers: Headers): Promise<SprintBoard> {
       provider: ctx.provider,
       title: `${ctx.project} · ${sprint?.name ?? "Backlog"}`,
       subtitle: sprint ? `${daysLeft(sprint)} days left · ${ctx.team}` : ctx.team,
-      columns: BOARD_COLUMNS.map((c) => ({ ...c, items: items.filter((i) => i.stateCategory === c.category) })),
+      // Only stages this process has (MyWork, for one, has no Resolved stage).
+      columns: BOARD_COLUMNS.filter((c) => statesInCategories(ctx, [c.category]).length > 0).map((c) => ({
+        ...c,
+        items: items.filter((i) => i.stateCategory === c.category),
+      })),
     };
   } catch (err) {
     return { ok: false, error: err instanceof WorkItemError ? err.message : "The board isn't available right now." };

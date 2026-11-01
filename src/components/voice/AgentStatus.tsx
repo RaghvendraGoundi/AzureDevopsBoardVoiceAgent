@@ -9,9 +9,10 @@ const LABELS: Record<Status, string> = {
   error: "Something went wrong",
 };
 
-export function AgentStatus({ status, activeTool }: { status: Status; activeTool: string | null }) {
+/** Announces the assistant's state to screen readers (the stage shows it visually). */
+export function AgentStatus({ status, activeTool, className = "sr-only" }: { status: Status; activeTool: string | null; className?: string }) {
   return (
-    <p className="h-6 text-center text-sm font-medium text-muted" aria-live="polite">
+    <p className={className} aria-live="polite">
       {activeTool ?? LABELS[status]}
     </p>
   );

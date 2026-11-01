@@ -117,6 +117,7 @@ export class RealtimeClient {
   private bargeIn = false;
   private mode: InputMode = "handsfree";
   private muted = false;
+  private outputMuted = false;
   private pttStartedAt: number | null = null;
   /** Server-reported speech timing per input item, used to judge short bursts. */
   private speech = new Map<string, { start?: number; end?: number }>();
@@ -195,7 +196,10 @@ export class RealtimeClient {
       this.audioEl.autoplay = true;
       pc.ontrack = (e) => {
         const [stream] = e.streams;
-        if (this.audioEl) this.audioEl.srcObject = stream;
+        if (this.audioEl) {
+          this.audioEl.srcObject = stream;
+          this.audioEl.muted = this.outputMuted;
+        }
         this.outAnalyser = this.analyse(stream);
       };
       pc.onconnectionstatechange = () => {
@@ -258,6 +262,28 @@ export class RealtimeClient {
   setMuted(muted: boolean) {
     this.muted = muted;
     this.syncMicTrack();
+  }
+
+  /** Silences the assistant's voice (the mic is separate: setMuted). */
+  setOutputMuted(muted: boolean) {
+    this.outputMuted = muted;
+    if (this.audioEl) this.audioEl.muted = muted;
+  }
+
+  /** The user asked the assistant to stop talking (tapped the orb or Interrupt). */
+  stopSpeaking() {
+    if (this.assistantBusy()) this.interrupt();
+  }
+
+  /** A typed message, answered like a spoken one. Returns false if it can't be sent. */
+  sendText(text: string): boolean {
+    const clean = text.trim();
+    if (!clean || this.dc?.readyState !== "open") return false;
+    if (this.assistantBusy()) this.interrupt();
+    this.send({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: clean }] } });
+    this.emit({ type: "user_transcript", id: `typed-${Date.now().toString(36)}`, text: clean, final: true });
+    this.requestResponse();
+    return true;
   }
 
   /** Switch between hands-free (voice detection) and push-to-talk. */

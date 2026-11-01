@@ -22,6 +22,10 @@ const PREFETCH_MAX_AGE_MS = 5 * 60 * 1000;
 export function useVoiceSession() {
   const [state, dispatch] = useReducer(workspaceReducer, initialWorkspaceState);
   const [muted, setMuted] = useState(false);
+  const [outputMuted, setOutputMuted] = useState(false);
+  // A message typed before a call was running, sent once it connects.
+  const pendingText = useRef<string | null>(null);
+  const outputMutedRef = useRef(false);
   const [demoRunning, setDemoRunning] = useState(false);
   const [mode, setModeState] = useState<InputMode>("handsfree");
   const [talking, setTalking] = useState(false);
@@ -77,9 +81,16 @@ export function useVoiceSession() {
       const credentials = hasHistory.current ? () => fetchSessionCredentials(conversationId) : takeCredentials;
       if (client instanceof LiveClient) await client.connect(conversationId);
       else await client.connect(credentials, mode);
+      client.setOutputMuted(outputMutedRef.current);
+      const text = pendingText.current;
+      pendingText.current = null;
+      if (text && !client.sendText(text)) {
+        dispatch({ type: "error", message: "Typing works with the Realtime model. Say it instead, or switch models." });
+      }
     } catch {
       // The client already emitted a failed connection event with the reason.
       clientRef.current = null;
+      pendingText.current = null;
     }
   }, [onEvent, mode, engine, takeCredentials, prefetch, ensureConversation]);
 
@@ -133,6 +144,36 @@ export function useVoiceSession() {
       return !m;
     });
   }, []);
+
+  /** Silences (or restores) the assistant's voice; captions keep showing what it says. */
+  const toggleOutputMute = useCallback(() => {
+    setOutputMuted((m) => {
+      outputMutedRef.current = !m;
+      clientRef.current?.setOutputMuted(!m);
+      return !m;
+    });
+  }, []);
+
+  /** Stops the assistant mid-reply. */
+  const interrupt = useCallback(() => clientRef.current?.stopSpeaking(), []);
+
+  /** Sends a typed message; starts a call first if none is running. */
+  const sendText = useCallback(
+    (text: string) => {
+      const clean = text.trim();
+      if (!clean) return;
+      const client = clientRef.current;
+      if (!client) {
+        pendingText.current = clean;
+        void start();
+        return;
+      }
+      if (!client.sendText(clean)) {
+        dispatch({ type: "error", message: "Typing works with the Realtime model. Say it instead, or switch models." });
+      }
+    },
+    [start],
+  );
 
   /** On-screen Confirm / Cancel for a pending write. */
   const resolvePending = useCallback(async (actionId: string, decision: "confirm" | "cancel") => {
@@ -229,6 +270,10 @@ export function useVoiceSession() {
   return {
     state,
     muted,
+    outputMuted,
+    toggleOutputMute,
+    interrupt,
+    sendText,
     demoRunning,
     mode,
     talking,

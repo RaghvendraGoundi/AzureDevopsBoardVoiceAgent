@@ -42,76 +42,74 @@ export function SessionDialog({ closing, summary, conversationTitle, onContinue,
   if (!summary && !closing) return null;
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-[rgba(2,4,10,0.66)] p-4 backdrop-blur-sm">
       {summary ? (
         <section
           role="dialog"
           aria-modal="true"
           aria-labelledby="session-ended-title"
-          className="animate-rise w-full max-w-sm rounded-2xl border border-line bg-panel p-5 shadow-2xl"
+          className="panel animate-rise w-full max-w-md p-6"
         >
-          <h2 id="session-ended-title" className="text-lg font-semibold">
+          <h2 id="session-ended-title" className="serif text-[34px] leading-none">
             Session ended
           </h2>
-          <p className="mt-1 text-sm text-muted">{ENDED_BY[summary.endedBy]}</p>
+          <p className="sub2 mt-2">{ENDED_BY[summary.endedBy]}</p>
 
-          <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
-            <div className="rounded-xl bg-panel-2 px-2 py-2.5">
-              <dd className="text-lg font-semibold">{duration(summary.durationMs)}</dd>
-              <dt className="text-xs text-muted">Duration</dt>
-            </div>
-            <div className="rounded-xl bg-panel-2 px-2 py-2.5">
-              <dd className="text-lg font-semibold">{summary.turns}</dd>
-              <dt className="text-xs text-muted">Messages</dt>
-            </div>
-            <div className="rounded-xl bg-panel-2 px-2 py-2.5">
-              <dd className="text-lg font-semibold">{summary.changes.length}</dd>
-              <dt className="text-xs text-muted">Changes</dt>
-            </div>
+          <dl className="mt-5 flex">
+            {[
+              [duration(summary.durationMs), "Duration"],
+              [String(summary.turns), "Messages"],
+              [String(summary.changes.length), "Changes"],
+            ].map(([value, label], i) => (
+              <div key={label} className={`flex-1 ${i ? "border-l border-line pl-4" : ""}`}>
+                <dd className="text-[30px] leading-none font-semibold tracking-tight">{value}</dd>
+                <dt className="sub2 mt-1.5">{label}</dt>
+              </div>
+            ))}
           </dl>
 
           {summary.changes.length > 0 && (
-            <ul className="mt-3 flex flex-col gap-1 text-sm">
+            <ul className="mt-5 flex flex-col gap-1.5 border-t border-line pt-4 text-sm">
               {summary.changes.slice(0, 4).map((c) => (
                 <li key={c.id} className="truncate">
-                  <span className={c.kind === "created" ? "text-listen" : "text-ok"}>{c.kind === "created" ? "Created" : "Updated"}</span>{" "}
-                  #{c.item.id} {c.item.title}
+                  <span className={c.kind === "created" ? "text-voice" : "text-accent"}>{c.kind === "created" ? "Created" : "Updated"}</span>{" "}
+                  <span className="mono text-muted">#{c.item.id}</span> {c.item.title}
                 </li>
               ))}
-              {summary.changes.length > 4 && <li className="text-xs text-muted">and {summary.changes.length - 4} more</li>}
+              {summary.changes.length > 4 && <li className="sub2">and {summary.changes.length - 4} more</li>}
             </ul>
           )}
 
           {conversationTitle && (
-            <p className="mt-3 text-xs text-muted">
-              Saved to <span className="text-fg/80">{conversationTitle}</span>
+            <p className="sub2 mt-4">
+              Saved to <span className="text-fg">{conversationTitle}</span>
             </p>
           )}
 
-          <div className="mt-5 flex flex-col gap-2">
-            <button
-              ref={primary}
-              onClick={onContinue}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
-            >
+          <div className="mt-6 flex flex-col gap-2">
+            <button ref={primary} onClick={onContinue} className="pill pri lg">
               Continue this conversation
             </button>
             <div className="flex gap-2">
-              <button onClick={onNewConversation} className="flex-1 rounded-lg border border-line px-4 py-2 text-sm font-medium hover:bg-panel-2">
+              <button onClick={onNewConversation} className="pill flex-1">
                 New conversation
               </button>
-              <button onClick={onDismiss} className="flex-1 rounded-lg border border-line px-4 py-2 text-sm font-medium hover:bg-panel-2">
+              <button onClick={onDismiss} className="pill flex-1">
                 Close
               </button>
             </div>
           </div>
         </section>
       ) : (
-        <section role="alertdialog" aria-live="assertive" className="animate-rise flex items-center gap-3 rounded-2xl border border-line bg-panel px-5 py-4 shadow-2xl">
-          <span className="size-4 animate-spin rounded-full border-2 border-line border-t-accent" aria-hidden />
+        <section role="alertdialog" aria-live="assertive" className="panel animate-rise flex items-center gap-4 px-6 py-5">
+          <span className="ind t" aria-hidden>
+            <i />
+            <i />
+            <i />
+          </span>
           <div>
-            <p className="font-semibold">Closing session…</p>
-            <p className="text-xs text-muted">{closing === "assistant" ? "Saying goodbye" : "Hanging up"}</p>
+            <p className="serif text-[28px] leading-none">Closing session…</p>
+            <p className="sub2 mt-1.5">{closing === "assistant" ? "Saying goodbye" : "Hanging up"}</p>
           </div>
         </section>
       )}

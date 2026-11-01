@@ -3,69 +3,74 @@
 import { useEffect, useRef } from "react";
 import type { AgentStatus } from "@/types/voice";
 
-const COLORS: Record<AgentStatus, string> = {
-  idle: "#3b4256",
-  connecting: "#64748b",
-  listening: "var(--color-listen)",
-  processing: "var(--color-think)",
-  speaking: "var(--color-speak)",
-  error: "var(--color-danger)",
-};
-
 interface Props {
   status: AgentStatus;
   /** Live audio levels (0..1); polled every frame. */
   levels: () => { input: number; output: number };
 }
 
-export function VoiceOrb({ status, levels }: Props) {
-  const coreRef = useRef<HTMLDivElement>(null);
-  const haloRef = useRef<HTMLDivElement>(null);
+const MERIDIANS = [0, 30, 60, 90, 120, 150];
+const PARALLELS = [-0.6, -0.3, 0, 0.3, 0.6];
 
-  // Drive scale from audio level without re-rendering React every frame.
+// 56 bars around the globe; each reacts a little differently to the level.
+const BARS = Array.from({ length: 56 }, (_, i) => {
+  const wave = Math.sin(i * 0.9) * 0.5 + Math.sin(i * 0.37 + 1) * 0.5;
+  return { angle: (360 / 56) * i, height: 18 + Math.round(Math.abs(wave) * 22), gain: 0.9 + Math.abs(wave) * 1.6 };
+});
+
+/**
+ * The assistant's orb: a turning wireframe globe with a glowing core, and
+ * a ring of bars that follows the live audio (your voice while listening,
+ * the assistant's while speaking). Colour comes from the scene's tone.
+ */
+export function VoiceOrb({ status, levels }: Props) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Drive the level through a CSS variable so React doesn't re-render every frame.
   useEffect(() => {
     let raf = 0;
     let smoothed = 0;
     const tick = () => {
       const { input, output } = levels();
-      const target = status === "speaking" ? output : status === "listening" ? input : 0;
-      smoothed += (target - smoothed) * 0.25;
-      if (coreRef.current) coreRef.current.style.transform = `scale(${1 + smoothed * 0.18})`;
-      if (haloRef.current) {
-        haloRef.current.style.transform = `scale(${1.05 + smoothed * 0.45})`;
-        haloRef.current.style.opacity = String(0.25 + smoothed * 0.6);
-      }
+      const target = status === "speaking" ? output : status === "listening" ? input : status === "processing" ? 0.18 : 0;
+      smoothed += (target - smoothed) * 0.22;
+      ref.current?.style.setProperty("--lvl", smoothed.toFixed(3));
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [levels, status]);
 
-  const color = COLORS[status];
-  const active = status !== "idle";
-
   return (
-    <div className="relative grid size-48 place-items-center sm:size-56" role="img" aria-label={`Assistant is ${status}`}>
-      <div
-        ref={haloRef}
-        className="absolute inset-0 rounded-full blur-2xl transition-colors duration-500"
-        style={{ background: color, opacity: active ? 0.3 : 0.12 }}
-      />
-      {status === "processing" || status === "connecting" ? (
-        <div
-          className="absolute inset-2 rounded-full border-2 border-transparent"
-          style={{ borderTopColor: color, borderRightColor: color, animation: "orb-spin 1.1s linear infinite" }}
-        />
-      ) : null}
-      <div
-        ref={coreRef}
-        className="relative size-32 rounded-full transition-[background] duration-500 sm:size-40"
-        style={{
-          background: `radial-gradient(circle at 35% 30%, rgb(255 255 255 / 0.55), transparent 45%), radial-gradient(circle at 50% 60%, ${color}, #0b0d12 85%)`,
-          boxShadow: `0 0 60px -10px ${color}, inset 0 0 30px rgb(0 0 0 / 0.5)`,
-          animation: status === "idle" || status === "error" ? "orb-breathe 4s ease-in-out infinite" : undefined,
-        }}
-      />
+    <div ref={ref} className="orb" data-state={status} aria-hidden>
+      <div className="orb-glow" />
+      <div className="orb-rip" />
+      <div className="orb-rip" />
+      <div className="orb-tilt">
+        <div className="orb-gim" />
+        <div className="orb-globe">
+          {MERIDIANS.map((deg) => (
+            <i key={`m${deg}`} style={{ transform: `rotateY(${deg}deg)` }} />
+          ))}
+          {PARALLELS.map((p) => (
+            <i
+              key={`p${p}`}
+              style={{
+                transform: `rotateX(90deg) translateZ(calc(var(--orb) * 0.28 * ${p})) scale(${Math.sqrt(1 - p * p).toFixed(3)})`,
+                borderColor: "rgba(var(--c), 0.3)",
+              }}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="orb-core" />
+      <div className="orb-bars">
+        {BARS.map((b) => (
+          <b key={b.angle} style={{ ["--a" as string]: `${b.angle}deg`, ["--h" as string]: `${b.height}px`, ["--k" as string]: b.gain.toFixed(2) }}>
+            <i />
+          </b>
+        ))}
+      </div>
     </div>
   );
 }

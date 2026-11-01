@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { WorkItem } from "@/lib/devops/types";
 import type { PendingAction } from "@/types/voice";
+import { TypeIcon } from "./icons";
 import { StateBadge } from "./WorkItemCard";
 
 type Field = { key: string; label: string; value: (i: WorkItem) => string };
@@ -11,16 +12,16 @@ const FIELDS: Field[] = [
   { key: "title", label: "Title", value: (i) => i.title },
   { key: "type", label: "Type", value: (i) => i.type },
   { key: "state", label: "State", value: (i) => i.state },
-  { key: "parent", label: "Parent", value: (i) => (i.parentId ? `#${i.parentId} ${i.parentTitle ?? ""}`.trim() : "—") },
+  { key: "parent", label: "Parent", value: (i) => (i.parentId ? `#${i.parentId} ${i.parentTitle ?? ""}`.trim() : "None") },
   { key: "sprint", label: "Sprint", value: (i) => i.sprintName ?? "Backlog" },
   { key: "assignedTo", label: "Assigned to", value: (i) => i.assignedTo?.displayName ?? "Unassigned" },
-  { key: "priority", label: "Priority", value: (i) => (i.priority === null ? "—" : String(i.priority)) },
-  { key: "tags", label: "Tags", value: (i) => i.tags.join(", ") || "—" },
+  { key: "priority", label: "Priority", value: (i) => (i.priority === null ? "None" : String(i.priority)) },
+  { key: "tags", label: "Tags", value: (i) => i.tags.join(", ") || "None" },
 ];
 
 function show(item: WorkItem, field: Field) {
   if (field.key === "state") return <StateBadge state={item.state} category={item.stateCategory} />;
-  return field.value(item);
+  return <span>{field.value(item)}</span>;
 }
 
 interface Props {
@@ -28,9 +29,11 @@ interface Props {
   onResolve: (actionId: string, decision: "confirm" | "cancel") => Promise<void>;
 }
 
+/** A proposed change, shown until the user says yes or no (or taps a button). */
 export function ConfirmationCard({ action, onResolve }: Props) {
   const [busy, setBusy] = useState<"confirm" | "cancel" | null>(null);
   const { before, after } = action;
+  const isUpdate = action.kind === "update" && before;
 
   async function resolve(decision: "confirm" | "cancel") {
     setBusy(decision);
@@ -41,58 +44,67 @@ export function ConfirmationCard({ action, onResolve }: Props) {
     }
   }
 
-  const rows =
-    action.kind === "update" && before
-      ? FIELDS.filter((f) => f.value(before) !== f.value(after))
-      : FIELDS.filter((f) => f.key !== "tags" || after.tags.length > 0);
+  const rows = isUpdate
+    ? FIELDS.filter((f) => f.key !== "title" && f.value(before) !== f.value(after))
+    : FIELDS.filter((f) => f.key !== "title" && (f.key !== "tags" || after.tags.length > 0));
+  const renamed = isUpdate && before.title !== after.title;
 
   return (
-    <section className="animate-rise rounded-xl border border-warn/50 bg-warn/5 p-4" aria-label="Pending change">
-      <p className="text-xs font-semibold tracking-wide text-warn uppercase">
-        {action.kind === "create" ? "New work item, awaiting confirmation" : `Update #${after.id}, awaiting confirmation`}
-      </p>
-      {action.kind === "update" && <h3 className="mt-1 font-semibold">{after.title}</h3>}
+    <section className="card att animate-rise" aria-label="Change waiting for your confirmation">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-sm font-bold text-accent">{isUpdate ? "Waiting for your yes" : "New item, waiting for your yes"}</span>
+        <span className="sub2">Voice or tap</span>
+      </div>
+
+      <div className="meta mt-3">
+        <span className="tg">
+          <TypeIcon type={after.type} />
+          {after.type}
+        </span>
+        {isUpdate && <span>#{after.id}</span>}
+      </div>
+      <h3 className="ttl">{renamed ? before.title : after.title}</h3>
+
+      <dl className="mt-3 flex flex-col gap-2">
+        {renamed && (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <dt className="w-24 shrink-0 sub2">Title</dt>
+            <dd>
+              → <span className="font-semibold">{after.title}</span>
+            </dd>
+          </div>
+        )}
+        {rows.map((f) => (
+          <div key={f.key} className="flex flex-wrap items-center gap-2 text-sm">
+            <dt className="w-24 shrink-0 sub2">{f.label}</dt>
+            <dd className="flex flex-wrap items-center gap-2">
+              {isUpdate && (
+                <>
+                  <span className="text-muted">{show(before, f)}</span>
+                  <span className="text-muted" aria-label="changes to">
+                    →
+                  </span>
+                </>
+              )}
+              <span className="font-semibold">{show(after, f)}</span>
+            </dd>
+          </div>
+        ))}
+      </dl>
+
       {action.kind === "update" && action.changes?.comment && (
-        <p className="mt-2 rounded-lg bg-panel-2 px-3 py-2 text-sm">
-          <span className="text-muted">Comment: </span>
-          {action.changes.comment}
+        <p className="mt-3 text-sm">
+          <span className="sub2">Note to add: </span>“{action.changes.comment}”
         </p>
       )}
 
-      <table className="mt-3 w-full text-sm">
-        <tbody>
-          {rows.map((f) => (
-            <tr key={f.key} className="border-t border-line/60 first:border-0">
-              <th className="py-1.5 pr-3 text-left font-normal text-muted">{f.label}</th>
-              {action.kind === "update" && before ? (
-                <td className="py-1.5">
-                  <span className="text-muted line-through decoration-muted/60">{show(before, f)}</span>
-                  <span className="mx-2 text-muted">→</span>
-                  <span className="font-medium">{show(after, f)}</span>
-                </td>
-              ) : (
-                <td className="py-1.5 font-medium">{show(after, f)}</td>
-              )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <p className="mt-3 text-xs text-muted">Say “yes” or “no”, or use the buttons.</p>
-      <div className="mt-2 flex gap-2">
-        <button
-          onClick={() => resolve("confirm")}
-          disabled={busy !== null}
-          className="rounded-lg bg-ok px-4 py-2 text-sm font-semibold text-black hover:brightness-110 disabled:opacity-50"
-        >
-          {busy === "confirm" ? "Saving…" : "Confirm"}
-        </button>
-        <button
-          onClick={() => resolve("cancel")}
-          disabled={busy !== null}
-          className="rounded-lg border border-line px-4 py-2 text-sm font-medium hover:bg-panel-2 disabled:opacity-50"
-        >
+      <p className="sub2 mt-4">Nothing changes on the board until you confirm.</p>
+      <div className="mt-3 flex justify-end gap-2">
+        <button onClick={() => resolve("cancel")} disabled={busy !== null} className="pill">
           Cancel
+        </button>
+        <button onClick={() => resolve("confirm")} disabled={busy !== null} className="pill pri">
+          {busy === "confirm" ? "Saving…" : "Confirm"}
         </button>
       </div>
     </section>

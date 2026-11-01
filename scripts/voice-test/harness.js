@@ -23,7 +23,11 @@
 const STATUS = () => document.querySelector('p[aria-live="polite"]')?.textContent?.trim() ?? "";
 const LISTENING = "Listening…";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const button = (text) => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === text || b.textContent.includes(text));
+/** A visible button by its accessible label or text. */
+const button = (text) =>
+  [...document.querySelectorAll("button")].find(
+    (b) => !b.closest("[inert]") && (b.getAttribute("aria-label") === text || b.textContent.trim() === text || b.textContent.includes(text)),
+  );
 
 async function until(check, timeoutMs, everyMs = 200) {
   const end = performance.now() + timeoutMs;
@@ -133,9 +137,17 @@ export async function run(name, opts = {}) {
   const report = { scenario: name, engine: null, steps: [], events };
   try {
     // --- start ---------------------------------------------------------------
-    if (opts.engine) button(opts.engine === "live" ? "GPT-Live" : "Realtime")?.click();
+    if (opts.engine) {
+      // The model is picked in the Settings menu.
+      button("Settings")?.click();
+      await sleep(200);
+      [...document.querySelectorAll('[aria-label="Voice model"] [role="radio"]')]
+        .find((r) => r.textContent.includes(opts.engine === "live" ? "GPT-Live" : "Realtime"))
+        ?.click();
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    }
     await sleep(300);
-    report.engine = document.querySelector('[aria-label="Voice model"] [aria-checked="true"]')?.textContent ?? "?";
+    report.engine = localStorage.getItem("voice-engine") === "live" ? "GPT-Live" : "Realtime";
     button("Start voice session").click();
     const started = performance.now();
     if (!(await until(() => STATUS() === LISTENING, 20000))) throw new Error(`Never got to Listening (status: ${STATUS()})`);

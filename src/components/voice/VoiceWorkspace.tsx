@@ -1,107 +1,221 @@
 "use client";
 
-import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useVoiceSession } from "@/hooks/voice/useVoiceSession";
 import { AgentStatus } from "./AgentStatus";
-import { ConversationList } from "./ConversationList";
-import { ConversationTranscript } from "./ConversationTranscript";
-import { DevOpsWorkspace } from "./DevOpsWorkspace";
+import { CallDock } from "./CallDock";
+import { CallStage } from "./CallStage";
+import { ChatPanel } from "./ChatPanel";
+import { ChatIcon, WorkspaceIcon } from "./icons";
 import { SessionDialog } from "./SessionDialog";
-import { VoiceControls } from "./VoiceControls";
-import { VoiceOrb } from "./VoiceOrb";
+import { TopBar } from "./TopBar";
+import { WorkspacePanel } from "./WorkspacePanel";
 
+/** True on screens wide enough for side panels; phones and small tablets get bottom sheets. */
+function useWide() {
+  const [wide, setWide] = useState(true);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const update = () => setWide(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  return wide;
+}
+
+/**
+ * The voice page, variant B ("Ink and signal"): the orb first, with Chat and
+ * Workspace sliding in from the edges when there's something to show.
+ */
 export function VoiceWorkspace() {
   const s = useVoiceSession();
   const { state, conversations: c } = s;
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const locked = state.connection === "connected" || state.connection === "connecting" || s.demoRunning;
+  const wide = useWide();
+  const [chatOpen, setChatOpen] = useState(false);
+  const [workOpen, setWorkOpen] = useState(false);
+  const [captions, setCaptions] = useState(true);
+  const live = state.connection === "connected" || s.demoRunning;
+  const locked = live || state.connection === "connecting";
   const currentTitle = c.conversations.find((x) => x.id === c.currentId)?.title ?? null;
 
-  const list = (
-    <ConversationList
+  // Results or a change to confirm bring the workspace in.
+  useEffect(() => {
+    if (state.results || state.pending) setWorkOpen(true);
+  }, [state.results, state.pending]);
+  // On a phone only one sheet is open at a time.
+  useEffect(() => {
+    if (!wide && chatOpen && workOpen) setChatOpen(false);
+  }, [wide, workOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openChat = () => {
+    setChatOpen(true);
+    if (!wide) setWorkOpen(false);
+  };
+  const openWork = () => {
+    setWorkOpen(true);
+    if (!wide) setChatOpen(false);
+  };
+
+  const yourCall = live && !!state.pending && (state.status === "listening" || state.status === "idle");
+  const tone =
+    state.status === "error" || state.connection === "failed"
+      ? "error"
+      : yourCall
+        ? "signal"
+        : state.status === "processing"
+          ? "think"
+          : live && (state.status === "listening" || state.status === "speaking")
+            ? "voice"
+            : undefined;
+
+  const messageCount = state.transcript.filter((e) => e.text.trim()).length;
+  const resultCount = state.results?.items.length ?? 0;
+
+  const chat = (variant: "panel" | "sheet") => (
+    <ChatPanel
+      variant={variant}
+      transcript={state.transcript}
       conversations={c.conversations}
       currentId={c.currentId}
       loadingId={c.loadingId}
       locked={locked}
+      canType={s.engine === "realtime" && !s.demoRunning}
+      onClose={() => setChatOpen(false)}
       onNew={() => {
         c.newConversation();
-        setDrawerOpen(false);
+        setWorkOpen(false);
       }}
       onOpen={(id) => {
         void c.open(id);
-        setDrawerOpen(false);
+        if (wide) setWorkOpen(true);
       }}
       onDelete={(id) => void c.remove(id)}
+      onSend={s.sendText}
+    />
+  );
+  const work = (variant: "panel" | "sheet") => (
+    <WorkspacePanel
+      variant={variant}
+      state={state}
+      onClose={() => setWorkOpen(false)}
+      onResolve={s.resolvePending}
+      onDismissError={s.dismissError}
     />
   );
 
   return (
-    <div className="flex min-h-dvh flex-col lg:h-dvh">
-      <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6">
-        <div className="flex min-w-0 items-center gap-2">
-          <button
-            onClick={() => setDrawerOpen(true)}
-            className="rounded-lg border border-line px-2 py-1 text-xs font-medium hover:bg-panel-2 lg:hidden"
-            aria-label="Show conversations"
-          >
-            ☰
-          </button>
-          <span className="size-2.5 shrink-0 rounded-full bg-accent" />
-          <span className="font-semibold">DevOps Voice</span>
-          <span className="hidden truncate text-sm text-muted sm:inline">{currentTitle ? `· ${currentTitle}` : "· New conversation"}</span>
-        </div>
-        <Link href="/board" className="shrink-0 text-sm text-muted hover:text-fg">
-          View board →
-        </Link>
-      </header>
+    <div className="scene flex h-dvh flex-col" data-tone={tone}>
+      <div className="scene-bg" />
+      <div className="scene-floor" />
+      <div className="scene-vig" />
+      <AgentStatus status={state.status} activeTool={state.activeTool} />
 
-      {drawerOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Conversations">
-          <button className="absolute inset-0 bg-black/50" aria-label="Close conversations" onClick={() => setDrawerOpen(false)} />
-          <div className="animate-rise absolute inset-y-0 left-0 w-72 max-w-[85vw] border-r border-line bg-panel">{list}</div>
+      <div className="relative z-10 flex h-full min-h-0 flex-col">
+        <TopBar
+          connection={state.connection}
+          demoRunning={s.demoRunning}
+          demoAvailable={state.boardInfo?.provider !== "azure"}
+          mode={s.mode}
+          engine={s.engine}
+          onModeChange={s.setMode}
+          onEngineChange={s.setEngine}
+          onDemo={s.startDemo}
+          onStopDemo={s.stopDemo}
+        />
+
+        <div className="relative flex min-h-0 flex-1">
+          {wide && (
+            <>
+              <aside
+                aria-label="Chat"
+                aria-hidden={!chatOpen}
+                inert={!chatOpen}
+                className={`panel absolute top-2 bottom-5 left-5 z-10 w-[min(400px,30vw)] overflow-hidden transition-[transform,opacity] duration-500 ease-[cubic-bezier(.2,.8,.2,1)] ${
+                  chatOpen ? "translate-x-0 opacity-100" : "pointer-events-none -translate-x-[110%] opacity-0"
+                }`}
+              >
+                {chat("panel")}
+              </aside>
+              <aside
+                aria-label="Workspace"
+                aria-hidden={!workOpen}
+                inert={!workOpen}
+                className={`panel absolute top-2 right-5 bottom-5 z-10 w-[min(440px,34vw)] overflow-hidden transition-[transform,opacity] duration-500 ease-[cubic-bezier(.2,.8,.2,1)] ${
+                  workOpen ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-[110%] opacity-0"
+                }`}
+              >
+                {work("panel")}
+              </aside>
+            </>
+          )}
+
+          {!(wide && chatOpen) && (
+            <button className="edge l" onClick={openChat} aria-label="Open chat" aria-expanded={chatOpen}>
+              <ChatIcon size={18} />
+              <span className="v">Chat</span>
+              {messageCount > 0 && <span className="n">{messageCount}</span>}
+            </button>
+          )}
+          {!(wide && workOpen) && (
+            <button className="edge r" onClick={openWork} aria-label="Open workspace" aria-expanded={workOpen}>
+              <WorkspaceIcon size={18} />
+              <span className="v">Workspace</span>
+              {state.pending ? <span className="nd" aria-label="A change is waiting for your yes" /> : resultCount > 0 && <span className="n">{resultCount}</span>}
+            </button>
+          )}
+
+          <main
+            className={`flex min-w-0 flex-1 flex-col items-center transition-[padding] duration-500 ${
+              wide && chatOpen ? "pl-[calc(min(400px,30vw)+40px)]" : "pl-14"
+            } ${wide && workOpen ? "pr-[calc(min(440px,34vw)+40px)]" : "pr-14"}`}
+          >
+            <div className="@container flex min-h-0 w-full flex-1 flex-col items-center justify-center [container-type:inline-size]">
+              <CallStage
+                state={state}
+                mode={s.mode}
+                talking={s.talking}
+                muted={s.muted}
+                captions={captions}
+                demoRunning={s.demoRunning}
+                levels={s.levels}
+                onOrb={() => (live ? s.interrupt() : !locked && void s.start())}
+              />
+            </div>
+            <div className="pt-2 pb-6">
+              <CallDock
+                connection={state.connection}
+                status={state.status}
+                mode={s.mode}
+                talking={s.talking}
+                muted={s.muted}
+                outputMuted={s.outputMuted}
+                captions={captions}
+                demoRunning={s.demoRunning}
+                onStart={s.start}
+                onStop={s.stop}
+                onToggleMute={s.toggleMute}
+                onToggleOutput={s.toggleOutputMute}
+                onToggleCaptions={() => setCaptions((v) => !v)}
+                onInterrupt={s.interrupt}
+                onTalkStart={s.pttStart}
+                onTalkEnd={s.pttEnd}
+                onStopDemo={s.stopDemo}
+              />
+            </div>
+          </main>
+        </div>
+      </div>
+
+      {!wide && (chatOpen || workOpen) && (
+        <div className="fixed inset-0 z-30" role="dialog" aria-modal="true" aria-label={chatOpen ? "Chat" : "Workspace"}>
+          <button className="absolute inset-0 bg-[rgba(2,4,10,0.55)]" aria-label="Close" onClick={() => (chatOpen ? setChatOpen(false) : setWorkOpen(false))} />
+          <div className="panel animate-rise absolute inset-x-0 bottom-0 flex h-[80dvh] flex-col rounded-b-none! border-b-0">
+            <div className="sheet-grab" aria-hidden />
+            <div className="min-h-0 flex-1">{chatOpen ? chat("sheet") : work("sheet")}</div>
+          </div>
         </div>
       )}
-
-      <main className="grid flex-1 gap-4 p-4 sm:p-6 lg:min-h-0 lg:grid-cols-[240px_minmax(340px,420px)_1fr]">
-        <aside className="hidden rounded-2xl border border-line bg-panel lg:block lg:min-h-0">{list}</aside>
-
-        <section className="flex flex-col rounded-2xl border border-line bg-panel lg:min-h-0" aria-label="Voice assistant">
-          <div className="flex flex-col items-center gap-3 px-4 pt-6 pb-4">
-            <VoiceOrb status={state.status} levels={s.levels} />
-            <AgentStatus status={state.status} activeTool={state.activeTool} />
-            <VoiceControls
-              connection={state.connection}
-              muted={s.muted}
-              demoRunning={s.demoRunning}
-              mode={s.mode}
-              talking={s.talking}
-              engine={s.engine}
-              onEngineChange={s.setEngine}
-              onModeChange={s.setMode}
-              onTalkStart={s.pttStart}
-              onTalkEnd={s.pttEnd}
-              onStart={s.start}
-              onStop={s.stop}
-              onToggleMute={s.toggleMute}
-              onDemo={s.startDemo}
-              onStopDemo={s.stopDemo}
-            />
-            {state.connectionError && (
-              <p role="alert" className="max-w-xs text-center text-xs text-danger">
-                {state.connectionError}
-              </p>
-            )}
-          </div>
-          <div className="min-h-64 flex-1 overflow-y-auto border-t border-line lg:min-h-0">
-            <ConversationTranscript entries={state.transcript} />
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-line bg-panel/50 p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto" aria-label="DevOps workspace">
-          <DevOpsWorkspace state={state} onResolve={s.resolvePending} onDismissError={s.dismissError} />
-        </section>
-      </main>
 
       <SessionDialog
         closing={state.connection === "connected" ? state.closing : null}
@@ -114,6 +228,8 @@ export function VoiceWorkspace() {
         onNewConversation={() => {
           s.dismissSessionSummary();
           c.newConversation();
+          setChatOpen(false);
+          setWorkOpen(false);
         }}
         onDismiss={s.dismissSessionSummary}
       />

@@ -15,7 +15,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -85,6 +85,8 @@ function connect(wsUrl) {
 
 async function main() {
   mkdirSync(outDir, { recursive: true });
+  // The page imports the harness from public/; make sure it's the current one.
+  copyFileSync(path.join(import.meta.dirname, "harness.js"), path.resolve("public/__voice_test/harness.js"));
   const { chrome, profile, wsUrl } = await launch();
   const cdp = await connect(wsUrl);
   const shots = [];
@@ -122,9 +124,7 @@ async function main() {
     console.log(`Capturing ${APP} → ${outDir}`);
     await viewport(DESKTOP);
     await goto(`${APP}/voice`);
-    await evaluate(`[...document.querySelectorAll("button")].find(b => b.textContent.includes("+ New"))?.click()`);
-    await sleep(500);
-    await shot("01-voice-idle", "Voice page before a call");
+    await shot("01-voice-idle", "Arrive: only the orb");
 
     // The voice tour, paused after each step.
     await evaluate(`import("/__voice_test/harness.js").then(m => { window.__tour = m.run("design-tour", { engine: "realtime", pause: true }); })`);
@@ -150,7 +150,9 @@ async function main() {
     await shot("07-session-ended", "Summary when the call ends");
     await evaluate(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))`);
     await sleep(500);
-    await shot("08-conversation-saved", "The call saved as a conversation");
+    await evaluate(`document.querySelector('[aria-label="Open chat"]')?.click()`);
+    await sleep(900);
+    await shot("08-conversation-saved", "Look back: chat and workspace open");
 
     await goto(`${APP}/board`, 2500);
     await shot("09-board", "Sprint board");
@@ -158,9 +160,11 @@ async function main() {
     await viewport(PHONE);
     await goto(`${APP}/voice`);
     await shot("10-phone-voice", "Voice page on a phone");
-    await evaluate(`document.querySelector('[aria-label="Show conversations"]').click()`);
+    await evaluate(`document.querySelector('[aria-label="Open chat"]').click()`);
     await sleep(600);
-    await shot("11-phone-conversations", "Conversation drawer on a phone");
+    await evaluate(`document.querySelector('[role="dialog"] [aria-label="Show conversations"]')?.click()`);
+    await sleep(400);
+    await shot("11-phone-conversations", "Conversations in the chat sheet on a phone");
     await goto(`${APP}/board`, 2500);
     await shot("12-phone-board", "Sprint board on a phone");
 
