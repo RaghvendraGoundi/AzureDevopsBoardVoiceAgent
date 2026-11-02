@@ -1,12 +1,20 @@
 import type { ToolResponse } from "@/types/voice";
 import type { SessionCredentials } from "./realtimeClient";
 
+/** A 401 means the sign-in (Entra ID) has lapsed: go and sign in again, then come back. */
+export function signInAgainOn401(res: Response) {
+  if (res.status !== 401 || typeof window === "undefined") return;
+  const back = window.location.pathname + window.location.search;
+  window.location.assign(`/signin?error=SessionExpired&callbackUrl=${encodeURIComponent(back)}`);
+}
+
 async function postJson(url: string, body: unknown): Promise<ToolResponse> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  signInAgainOn401(res);
   if (!res.ok) throw new Error(`${url} responded ${res.status}`);
   return (await res.json()) as ToolResponse;
 }
@@ -28,6 +36,7 @@ export async function fetchSessionCredentials(conversationId?: string | null, vo
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ conversationId: conversationId ?? null, voice: voice ?? null }),
   });
+  signInAgainOn401(res);
   const data = (await res.json().catch(() => ({}))) as {
     clientSecret?: string;
     webrtcUrl?: string;

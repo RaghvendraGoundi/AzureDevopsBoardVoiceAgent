@@ -89,9 +89,28 @@ flowchart LR
 ## Connecting Azure DevOps
 
 1. In `.env.local` set `BOARD_PROVIDER=azure`, `AZURE_DEVOPS_ORG`, `AZURE_DEVOPS_PROJECT`, and `AZURE_DEVOPS_TEAM` if your team isn't called "&lt;project&gt; Team".
-2. Provide a credential:
-   - **For real users:** plug your Entra ID sign-in into `getAzureDevOpsCredential()` in [`src/lib/devops/azure/auth.ts`](src/lib/devops/azure/auth.ts). Return the user's delegated token for scope `499b84ac-1321-427f-aa17-267ca6abc798/.default` and a stable user id from your verified session. Caches and confirmations are kept per user.
-   - **For a quick local check:** set `AZURE_DEVOPS_PAT` to a personal access token with *Work Items (Read & write)* and *Project and Team (Read)* scopes. Keep it in `.env.local`, which is git-ignored.
+2. Sign in with **Microsoft Entra ID** (recommended). Each user signs in with their work account, and the board works as them, with their own Azure DevOps permissions.
+   1. In the [Entra admin center](https://entra.microsoft.com) go to **App registrations → New registration**:
+      - **Name:** DevOps Voice.
+      - **Supported account types:** *Accounts in this organizational directory only*.
+      - **Redirect URI:** *Web* → `http://localhost:3000/api/auth/callback/microsoft-entra-id`. Add your deployed URL's callback too.
+   2. Under **Certificates & secrets**, create a client secret and copy its **value**.
+   3. Under **API permissions → Add a permission → APIs my organization uses**, pick **Azure DevOps**, then **Delegated → user_impersonation**. Grant admin consent if your tenant requires it.
+   4. Put the IDs in `.env.local`:
+
+      ```bash
+      AUTH_MICROSOFT_ENTRA_ID_TENANT_ID=<Directory (tenant) ID>
+      AUTH_MICROSOFT_ENTRA_ID_ID=<Application (client) ID>
+      AUTH_MICROSOFT_ENTRA_ID_SECRET=<client secret value>
+      AUTH_SECRET=<output of: openssl rand -base64 33>
+      ```
+
+   With these set, every page and API needs a signed-in user, including the routes that start voice calls. Sign-in uses the authorization code flow with PKCE ([Auth.js](https://authjs.dev)).
+
+   **Where the tokens live.** The user's Azure DevOps token and refresh token are kept only in an encrypted, HTTP-only session cookie. The browser's JavaScript never sees them. The server refreshes the token before it expires.
+
+   **Per-user data.** Caches, saved conversations and pending confirmations are keyed by the user's Entra tenant and object id. The single hook for all of this is [`getAzureDevOpsCredential()`](src/lib/devops/azure/auth.ts).
+3. **Without Entra settings** (local testing only), set `AZURE_DEVOPS_PAT` to a personal access token with *Work Items (Read & write)* and *Project and Team (Read)* scopes. Keep it in `.env.local`, which is git-ignored.
 
 **Latency.** The project context is cached for 15 minutes, lists for 60 seconds and single items for 30 seconds, and every write clears what it touched. A list takes 2 to 3 requests, and a create or update is one JSON Patch request. Server logs show timings as `[ado] …` and `[tool] …`.
 
@@ -128,13 +147,17 @@ All settings live in `.env.local`; [`.env.example`](.env.example) documents each
 | `LIVE_BACKEND_MODEL`, `LIVE_REASONING_EFFORT` | `gpt-6-luna`, `low` | The model GPT-Live hands board work to |
 | `BOARD_PROVIDER` | `emulated` | `emulated` or `azure` |
 | `AZURE_DEVOPS_ORG`, `_PROJECT`, `_TEAM`, `_PAT` | — | See *Connecting Azure DevOps* |
+| `AUTH_MICROSOFT_ENTRA_ID_TENANT_ID`, `_ID`, `_SECRET`, `AUTH_SECRET` | — | Sign-in with Microsoft Entra ID (see above); `AUTH_URL` when not on localhost |
 | `BOARD_CURRENT_USER` | `Demo User` | Who "me" is on the emulated board |
 
 ## Project structure
 
 ```
 src/
+  auth.ts                 Auth.js sign-in (Microsoft Entra ID)
+  middleware.ts           requires sign-in when Entra ID is configured
   app/                    Next.js routes
+    signin/               the sign-in page
     voice/                the voice page
     board/                a simple sprint board view
     api/voice/            session (Realtime), live (GPT-Live), tools, actions
@@ -143,6 +166,7 @@ src/
   components/voice/       orb, call dock, chat, workspace, item detail, picker
   hooks/voice/            session state (useVoiceSession) and the workspace reducer
   lib/
+    auth/                 Entra ID settings, token refresh, sign-in gating
     devops/               board model, process rules, tools, confirmations, caching
       azure/              Azure DevOps REST client, context loader, repository
     voice/                Realtime and GPT-Live clients, prompts, turn-taking, voices
@@ -177,10 +201,11 @@ For end-to-end checks with real speech against the real voice service, see [scri
 
 ## Security notes
 
-- API keys and the Azure DevOps credential stay on the server. The browser only gets a short-lived session (Realtime), or talks through the server (GPT-Live).
+- Sign-in with Microsoft Entra ID (optional): pages and APIs require a signed-in user, and the board acts with that user's own Azure DevOps permissions.
+- API keys and Azure DevOps tokens stay on the server, in an encrypted HTTP-only cookie for user tokens. The browser only gets a short-lived voice session (Realtime), or talks through the server (GPT-Live).
 - Every board write needs an explicit confirmation tied to the user who proposed it.
 - `.env.local` and `.data/` (the emulated board and saved conversations) are git-ignored.
 
 ## Tech
 
-Next.js 15 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · zod · Vitest · WebRTC · OpenAI Realtime and GPT-Live · Azure DevOps REST API 7.1 · Lucide icons
+Next.js 15 (App Router) · React 19 · TypeScript · Auth.js (Microsoft Entra ID) · Tailwind CSS 4 · zod · Vitest · WebRTC · OpenAI Realtime and GPT-Live · Azure DevOps REST API 7.1 · Lucide icons

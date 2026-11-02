@@ -3,6 +3,7 @@
 import type { VoiceEngine } from "@/hooks/voice/useVoiceSession";
 import type { ConnectionState } from "@/types/voice";
 import { voicesFor } from "@/lib/voice/voices";
+import { AccountMenu } from "./AccountMenu";
 import { ChevronDownIcon, LogoMark, WaveIcon } from "./icons";
 
 interface Props {
@@ -82,6 +83,7 @@ export function TopBar(p: Props) {
         <i aria-hidden />
         <span className="hidden sm:inline">{p.demoRunning ? "Demo" : CONN[p.connection]}</span>
       </span>
+      <AccountMenu disabled={live} />
     </header>
   );
 }

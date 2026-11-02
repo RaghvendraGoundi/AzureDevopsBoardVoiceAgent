@@ -2,6 +2,7 @@
 
 import type { AgentStatus, ToolResponse, VoiceEvent } from "@/types/voice";
 import { MicrophoneError } from "./realtimeClient";
+import { signInAgainOn401 } from "./toolExecutor";
 
 /**
  * Browser client for GPT-Live over WebRTC. GPT-Live is full duplex and takes
@@ -190,6 +191,7 @@ export class LiveClient {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sdp: pc.localDescription?.sdp, conversationId: conversationId ?? null, voice: voice ?? null }),
       });
+      signInAgainOn401(res);
       const data = (await res.json().catch(() => ({}))) as { sdp?: string; error?: string };
       if (!res.ok || !data.sdp) throw new Error(data.error ?? "Couldn't start a GPT-Live session.");
       await pc.setRemoteDescription({ type: "answer", sdp: data.sdp });

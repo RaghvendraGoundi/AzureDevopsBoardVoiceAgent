@@ -93,6 +93,25 @@ body {
   .seg button:hover:not([aria-checked="true"]) { color: #fff; background: rgba(var(--c), 0.12); }
   .seg button[aria-checked="true"] { background: #f6f6f1; color: #0a1220; }
   .seg button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  /* Account (Entra ID) in the header. */
+  .acct { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 10px 0 4px; border-radius: 20px; border: 1px solid rgba(140, 170, 220, 0.2); background: rgba(16, 26, 46, 0.72); color: #eaf2fb; cursor: pointer; }
+  .acct:hover { border-color: rgba(160, 190, 240, 0.4); }
+  .acct:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  .acct-av { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font: 700 12px var(--font-display); color: #0a1220; background: radial-gradient(circle at 35% 28%, #fff, #bccbe8 58%, #8497bf); }
+  .acct-name { font: 600 14px var(--font-display); }
+  .acct-menu { position: absolute; right: 0; top: 48px; z-index: 40; width: 260px; padding: 14px; border-radius: 18px !important; }
+
+  /* Sign-in page. */
+  .signin { position: relative; z-index: 1; width: min(460px, 100%); padding: 36px 36px 30px; border-radius: 28px !important; }
+  .signin-error { margin: 18px 0 0; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(255, 120, 135, 0.4); background: rgba(255, 90, 110, 0.1); color: #ffc2c9; font: 400 14px/1.45 var(--font-sans); }
+  .msbtn { margin-top: 24px; width: 100%; height: 54px; display: inline-flex; align-items: center; justify-content: center; gap: 12px; border-radius: 27px; border: 0; background: #f6f6f1; color: #0a1220; font: 700 15.5px var(--font-display); cursor: pointer; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35); transition: transform 0.15s, background 0.15s; }
+  .msbtn:hover { background: #fff; }
+  .msbtn:active { transform: scale(0.98); }
+  .msbtn:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+  .signin-points { margin: 22px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .signin-points li { position: relative; padding-left: 18px; font: 400 13px/1.45 var(--font-sans); color: #8fa2c2; }
+  .signin-points li::before { content: ""; position: absolute; left: 3px; top: 7px; width: 6px; height: 6px; border-radius: 50%; background: #b9fe6f; }
+
   .textbtn { background: none; border: 0; padding: 4px 8px; border-radius: 8px; font: 500 13.5px var(--font-sans); color: var(--mu); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(var(--c), 0.4); cursor: pointer; }
   .textbtn:hover { color: #eaf2fb; }
   .textbtn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
