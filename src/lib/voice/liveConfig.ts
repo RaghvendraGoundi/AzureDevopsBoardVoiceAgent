@@ -14,7 +14,6 @@ import { BOARD_RULES, BOARD_TOOL_GUIDE, boardSection, historyBlock, TOOL_FAILURE
 
 const REASONING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh"] as const;
 
-export const LIVE_SESSIONS_URL = "https://api.openai.com/v1/live/sessions";
 
 export function buildLiveInstructions(currentUser: string, history?: string | null) {
   return `# Role and Objective
@@ -90,9 +89,11 @@ export function buildLiveSession(
   boardSummary?: string | null,
   history?: string | null,
   voice?: string,
+  /** The GPT-Live model, or its Foundry deployment name. */
+  model?: string,
 ) {
   return {
-    model: env.OPENAI_LIVE_MODEL?.trim() || "gpt-live-1",
+    model: model ?? (env.OPENAI_LIVE_MODEL?.trim() || "gpt-live-1"),
     instructions: buildLiveInstructions(currentUser, history),
     audio: { output: { voice: voice ?? (env.LIVE_VOICE?.trim() || "marin") } },
     delegation: {

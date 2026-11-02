@@ -1,5 +1,5 @@
 import type { BoardInfo } from "@/lib/devops/briefing";
-import type { WorkItem, WorkItemDetail } from "@/lib/devops/types";
+import type { WorkItem, WorkItemDetail, WorkItemRef } from "@/lib/devops/types";
 import { TOOL_LABELS, type AgentStatus, type ConnectionState, type PendingAction, type VoiceEvent } from "@/types/voice";
 
 export interface TranscriptEntry {
@@ -31,14 +31,25 @@ export interface ActivityEntry {
   at: number;
 }
 
+export interface ToolStep {
+  callId: string;
+  tool: string;
+  label: string;
+  startedAt: number;
+  endedAt?: number;
+  ok?: boolean;
+}
+
 export interface WorkspaceState {
   connection: ConnectionState;
   connectionError: string | null;
   status: AgentStatus;
   /** Label of the tool currently running, e.g. "Searching Azure DevOps…". */
   activeTool: string | null;
+  /** Board steps in this call, newest last: what's running now and how long the last ones took. */
+  steps: ToolStep[];
   transcript: TranscriptEntry[];
-  results: { title: string; items: WorkItem[] } | null;
+  results: { title: string; items: WorkItem[]; ancestors?: WorkItemRef[] } | null;
   /** One item opened in full (from the assistant, or a click); shown over the results. */
   detail: WorkItemDetail | null;
   focusedId: number | null;
@@ -62,6 +73,7 @@ export const initialWorkspaceState: WorkspaceState = {
   connectionError: null,
   status: "idle",
   activeTool: null,
+  steps: [],
   transcript: [],
   results: null,
   detail: null,
@@ -125,7 +137,7 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
         connectionError: action.state === "failed" ? (action.error ?? "Connection failed.") : null,
         activeTool: action.state === "connected" ? state.activeTool : null,
       };
-      if (action.state === "connected") return { ...next, sessionStartedAt: Date.now(), closing: null, sessionSummary: null };
+      if (action.state === "connected") return { ...next, sessionStartedAt: Date.now(), closing: null, sessionSummary: null, steps: [] };
       if ((action.state === "disconnected" || action.state === "failed") && state.sessionStartedAt !== null) {
         const since = state.sessionStartedAt;
         return {
@@ -174,14 +186,20 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
           .map((e) => (e.role === "assistant" && !e.final ? { ...e, final: true, interrupted: true } : e)),
       };
 
-    case "tool_started":
-      return { ...state, status: "processing", activeTool: TOOL_LABELS[action.tool] ?? "Working…" };
+    case "tool_started": {
+      const label = TOOL_LABELS[action.tool] ?? "Working…";
+      const step: ToolStep = { callId: action.callId, tool: action.tool, label, startedAt: Date.now() };
+      return { ...state, status: "processing", activeTool: label, steps: [...state.steps, step].slice(-8) };
+    }
 
-    case "tool_finished":
-      return { ...state, activeTool: null };
+    case "tool_finished": {
+      const steps = state.steps.map((s) => (s.callId === action.callId ? { ...s, endedAt: Date.now(), ok: action.ok } : s));
+      const stillRunning = steps.find((s) => s.endedAt === undefined);
+      return { ...state, activeTool: stillRunning?.label ?? null, steps };
+    }
 
     case "work_items_loaded":
-      return { ...state, results: { title: action.title, items: action.items }, focusedId: null };
+      return { ...state, results: { title: action.title, items: action.items, ancestors: action.ancestors ?? [] }, focusedId: null };
 
     case "work_item_focused": {
       const inResults = state.results?.items.some((i) => i.id === action.item.id);

@@ -174,6 +174,35 @@ export function daysLeft(sprint: Sprint, now = new Date()): number | null {
   return Math.max(0, Math.ceil((endOfLastDay - now.getTime()) / 86_400_000));
 }
 
+/**
+ * People matching what the user said, best tier first: an exact email or full
+ * name; else everyone with that first name; else everyone whose name contains
+ * it. Several in one tier means the user has to say which.
+ */
+export function findPeople(ctx: BoardContext, input: string, extra: Person[] = []): Person[] {
+  const n = norm(input);
+  if (!n) return [];
+  if (/^(me|myself|i|mine)$/.test(n)) return [ctx.me];
+  const raw = input.trim().toLowerCase();
+  const seen = new Set<string>();
+  const people = [ctx.me, ...ctx.members, ...extra].filter((p) => {
+    const key = p.uniqueName.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const tiers: Array<(p: Person) => boolean> = [
+    (p) => p.uniqueName.toLowerCase() === raw || norm(p.displayName) === n,
+    (p) => norm(p.displayName).split(" ")[0] === n,
+    (p) => norm(p.displayName).includes(n),
+  ];
+  for (const match of tiers) {
+    const hits = people.filter(match);
+    if (hits.length) return hits;
+  }
+  return [];
+}
+
 /** A team member by (part of) their name or email, "me" for the user. */
 export function resolvePerson(ctx: BoardContext, input: string): Person | null {
   const n = norm(input);

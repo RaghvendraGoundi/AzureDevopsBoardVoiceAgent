@@ -101,6 +101,15 @@ const idFromUrl = (url: string) => Number(url.split("/").pop());
 /** The comments API is still a preview in 7.1. */
 const COMMENTS_API = "7.1-preview.4";
 
+interface IdentityDto {
+  displayName?: string;
+  signInAddress?: string;
+  mail?: string;
+  localId?: string;
+  originId?: string;
+  active?: boolean;
+}
+
 interface CommentDto {
   id: number;
   text?: string;
@@ -247,10 +256,56 @@ export class AzureDevOpsBoard implements WorkItemRepository {
     }
   }
 
+  /** Azure DevOps' people picker: users in the organization whose name matches. */
+  async searchPeople(text: string): Promise<Person[]> {
+    const res = await this.client.request<{ results?: Array<{ identities?: IdentityDto[] }> }>(
+      "POST",
+      `${this.client.orgUrl}/_apis/IdentityPicker/Identities`,
+      {
+        apiVersion: "7.1-preview.1",
+        body: {
+          query: text.trim(),
+          identityTypes: ["user"],
+          operationScopes: ["ims", "source"],
+          options: { MinResults: 1, MaxResults: 10 },
+          properties: ["DisplayName", "Mail", "SignInAddress", "Active"],
+        },
+      },
+    );
+    return (res.results?.[0]?.identities ?? [])
+      .filter((i) => i.active !== false && (i.signInAddress || i.mail))
+      .map((i) => ({ displayName: i.displayName ?? i.signInAddress ?? i.mail!, uniqueName: (i.signInAddress ?? i.mail)!, id: i.localId ?? i.originId }));
+  }
+
   async deleteComment(itemId: number, commentId: number): Promise<void> {
     await this.client.request<void>("DELETE", `${this.client.projectUrl}/_apis/wit/workItems/${itemId}/comments/${commentId}`, {
       apiVersion: COMMENTS_API,
     });
+  }
+
+  /** Everything above `items`, a level per batch request (at most five levels). */
+  async ancestorsOf(items: WorkItem[]): Promise<WorkItemRef[]> {
+    const known = new Set(items.map((i) => i.id));
+    const out: WorkItemRef[] = [];
+    let wanted = [...new Set(items.map((i) => i.parentId).filter((p): p is number => p !== null && !known.has(p)))];
+    for (let level = 0; wanted.length && level < 5; level++) {
+      const dtos = await this.batch(wanted, ["System.Id", "System.Title", "System.WorkItemType", "System.State", "System.Parent"]);
+      wanted.forEach((id) => known.add(id));
+      const next: number[] = [];
+      for (const d of dtos) {
+        const parent = typeof d.fields["System.Parent"] === "number" ? (d.fields["System.Parent"] as number) : null;
+        out.push({
+          id: d.id,
+          title: String(d.fields["System.Title"] ?? ""),
+          type: String(d.fields["System.WorkItemType"] ?? ""),
+          state: String(d.fields["System.State"] ?? ""),
+          parentId: parent,
+        });
+        if (parent !== null && !known.has(parent)) next.push(parent);
+      }
+      wanted = [...new Set(next)];
+    }
+    return out;
   }
 
   /** Parent, grandparent, … up to the top (at most five levels). */

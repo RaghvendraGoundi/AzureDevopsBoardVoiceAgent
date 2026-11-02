@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
-import { entraConfig, issuerFor, needsRefresh, refreshAdoTokens, SIGN_IN_SCOPES, type AdoTokens } from "@/lib/auth/entra";
+import { entraConfig, issuerFor, needsRefresh, refreshAdoTokens, SIGN_IN_SCOPES, userKeyFor, type AdoTokens } from "@/lib/auth/entra";
+import { getUserRepo } from "@/lib/users/store";
 
 /**
  * Sign-in with Microsoft Entra ID (Auth.js). The user consents once to
@@ -51,6 +52,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, account, profile }) {
       if (account?.access_token && account.refresh_token) {
+        const oid = (profile?.oid as string | undefined) ?? token.sub;
+        const tid = (profile?.tid as string | undefined) ?? cfg?.tenantId;
+        // Everyone who signs in shows up on the admin page.
+        if (oid && tid) {
+          void getUserRepo()
+            .seen({ userKey: userKeyFor(tid, oid), tenantId: tid, objectId: oid, name: token.name ?? token.email ?? "Unknown", email: token.email ?? null })
+            .catch((err: unknown) => console.warn("[users] couldn't record sign-in:", err instanceof Error ? err.message : err));
+        }
         return {
           ...token,
           ado: {
@@ -58,8 +67,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             refreshToken: account.refresh_token,
             expiresAt: (account.expires_at ?? Math.floor(Date.now() / 1000) + 3600) * 1000,
           },
-          oid: (profile?.oid as string | undefined) ?? token.sub,
-          tid: (profile?.tid as string | undefined) ?? cfg?.tenantId,
+          oid,
+          tid,
           error: undefined,
         };
       }

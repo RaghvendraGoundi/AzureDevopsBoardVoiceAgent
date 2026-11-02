@@ -9,6 +9,7 @@ import {
   defaultChildType,
   levelOf,
   parentTypesFor,
+  findPeople,
   resolvePerson,
   resolveSprint,
   resolveState,
@@ -18,6 +19,7 @@ import {
   statesInCategories,
   validStates,
 } from "./process";
+import { ADMIN_POLICY, NOT_YOURS, ONLY_YOURS, type Policy } from "./policy";
 import { WorkItemError, type WorkItemRepository } from "./repository";
 import {
   OPEN_CATEGORIES,
@@ -27,6 +29,7 @@ import {
   type Person,
   type StateCategory,
   type WorkItem,
+  type WorkItemDetail,
   type WorkItemPatch,
 } from "./types";
 
@@ -241,6 +244,8 @@ export interface ToolDeps {
   actions: PendingActionStore;
   /** The signed-in user; pending confirmations belong to them. */
   userKey: string;
+  /** What this user may see and change. Defaults to admin (local runs, tests). */
+  policy?: Policy;
 }
 
 /**
@@ -347,20 +352,36 @@ function sprintPath(ctx: BoardContext, input: string): string {
   return sprint.path;
 }
 
-function personFor(ctx: BoardContext, input: string): Person | null {
+/**
+ * The person the user named: from the project's teams first, then the
+ * organization's directory. Two or more equally good matches → ask which.
+ * Only names go back to the model; emails are aliased on the way out anyway.
+ */
+async function personFor(ctx: BoardContext, board: WorkItemRepository, input: string): Promise<Person | null> {
   if (/^(nobody|no one|none|unassigned|unassign)$/i.test(input.trim())) return null;
-  const person = resolvePerson(ctx, input);
-  if (!person) {
-    throw new Unresolved(`I couldn't find "${input}" on the team.`, { team: [ctx.me, ...ctx.members].map((p) => p.displayName) });
+  let matches = findPeople(ctx, input);
+  if (matches.length === 0 && board.searchPeople) {
+    const found = await board.searchPeople(input).catch(() => []);
+    matches = findPeople(ctx, input, found);
+    if (matches.length === 0) matches = found;
   }
-  return person;
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1) {
+    const names = matches.slice(0, 6).map((p) => p.displayName);
+    throw new Unresolved(`More than one person matches "${input}": ${names.join(", ")}. Ask which one they mean.`, { matches: names });
+  }
+  const fallback = resolvePerson(ctx, input); // an email the directory didn't know
+  if (fallback) return fallback;
+  throw new Unresolved(`I couldn't find anyone called "${input}" in this organization.`, {
+    team: [ctx.me, ...ctx.members].slice(0, 20).map((p) => p.displayName),
+  });
 }
 
-function assigneeFilter(ctx: BoardContext, input: string): AssigneeFilter {
+async function assigneeFilter(ctx: BoardContext, board: WorkItemRepository, input: string): Promise<AssigneeFilter> {
   const n = input.trim().toLowerCase();
   if (/^(me|mine|my|myself)$/.test(n)) return { kind: "me" };
   if (/^(anyone|anybody|everyone|all|team|any)$/.test(n)) return { kind: "anyone" };
-  const person = personFor(ctx, input);
+  const person = await personFor(ctx, board, input);
   return person ? { kind: "person", person } : { kind: "unassigned" };
 }
 
@@ -387,15 +408,22 @@ function withUnresolved<T>(fn: () => Promise<T>): Promise<T | ToolResponse> {
 
 // ---------- reads ----------
 
-async function listWorkItems(args: Args<"list_work_items">, { board }: ToolDeps): Promise<ToolResponse> {
+async function listWorkItems(args: Args<"list_work_items">, { board, policy = ADMIN_POLICY }: ToolDeps): Promise<ToolResponse> {
   return withUnresolved(async () => {
     const ctx = await board.context();
+    // Regular users only ever list their own items.
+    if (!policy.seesEveryone && args.assignee) {
+      const asked = await assigneeFilter(ctx, board, args.assignee);
+      if (asked.kind !== "me" && !(asked.kind === "person" && asked.person.uniqueName.toLowerCase() === ctx.me.uniqueName.toLowerCase())) {
+        return fail(ONLY_YOURS, { code: "forbidden" });
+      }
+    }
     const types = args.type ? [typeFor(ctx, args.type)] : undefined;
     // A search, a parent or a portfolio type (epics, initiatives…, which sit on the backlog
     // and often belong to nobody) means "find this", so don't silently limit it to my sprint.
     const portfolio = !!types && levelOf(ctx, types[0])?.kind === "portfolio";
     const scoped = !!args.search || args.parent_id !== undefined || portfolio;
-    const assignee = assigneeFilter(ctx, args.assignee ?? (scoped ? "anyone" : "me"));
+    const assignee = policy.seesEveryone ? await assigneeFilter(ctx, board, args.assignee ?? (scoped ? "anyone" : "me")) : ({ kind: "me" } as const);
     const sprintArg = args.sprint ?? (scoped ? "any" : "current");
     let iteration: string | undefined;
     let sprintLabel: string | null = null;
@@ -453,14 +481,29 @@ async function listWorkItems(args: Args<"list_work_items">, { board }: ToolDeps)
         ...(otherTypes && { note: `No ${types![0]} matched; these are other types with that title.` }),
         ...(items.length === 0 && !scoped && { hint: "Nothing matched. Try sprint 'any' or assignee 'anyone'." }),
       },
-      uiEvents: [{ type: "work_items_loaded", title, items }],
+      // The screen shows the results as a tree under their epics and initiatives (titles only for context).
+      uiEvents: [{ type: "work_items_loaded", title, items, ancestors: items.length ? await board.ancestorsOf?.(items).catch(() => []) : [] }],
     };
   });
 }
 
-async function getWorkItem({ id }: Args<"get_work_item">, { board }: ToolDeps): Promise<ToolResponse> {
-  const detail = await board.getDetail(id);
+async function getWorkItem({ id }: Args<"get_work_item">, { board, policy = ADMIN_POLICY }: ToolDeps): Promise<ToolResponse> {
+  const [detail, ctx] = await Promise.all([board.getDetail(id), board.context()]);
   if (!detail) return fail(`Work item #${id} does not exist.`);
+  if (!policy.canAccess(detail, ctx)) {
+    // Someone else's item: its place in the hierarchy, nothing more.
+    const limited: WorkItemDetail = { ...detail, description: "", comments: [], tags: [], restricted: true };
+    return {
+      output: {
+        ok: true,
+        restricted: true,
+        item: { id: detail.id, type: detail.type, title: detail.title, state: detail.state },
+        parents: detail.ancestors.map((a) => `${a.type} #${a.id} ${a.title}`),
+        note: NOT_YOURS,
+      },
+      uiEvents: [{ type: "work_item_detail", detail: limited }],
+    };
+  }
   const { ancestors, children, comments, ...item } = detail;
   const uiEvents: WorkspaceEvent[] = [{ type: "work_item_detail", detail }];
   return {
@@ -521,7 +564,7 @@ async function getSprint(args: Args<"get_sprint">, { board }: ToolDeps): Promise
 
 // ---------- proposals ----------
 
-async function proposeCreate(args: Args<"propose_create_work_item">, { board, actions, userKey }: ToolDeps): Promise<ToolResponse> {
+async function proposeCreate(args: Args<"propose_create_work_item">, { board, actions, userKey, policy = ADMIN_POLICY }: ToolDeps): Promise<ToolResponse> {
   return withUnresolved(async () => {
     const ctx = await board.context();
     let parent = args.parent_id ? await board.get(args.parent_id) : null;
@@ -561,7 +604,10 @@ async function proposeCreate(args: Args<"propose_create_work_item">, { board, ac
       : level?.kind === "portfolio"
         ? ctx.backlogIteration
         : (level?.kind === "task" && parentSprint) || (currentSprint(ctx)?.path ?? ctx.backlogIteration);
-    const assignedTo = args.assignee ? personFor(ctx, args.assignee) : level?.kind === "portfolio" ? null : ctx.me;
+    const assignedTo = args.assignee ? await personFor(ctx, board, args.assignee) : level?.kind === "portfolio" && policy.seesEveryone ? null : ctx.me;
+    if (!policy.seesEveryone && assignedTo?.uniqueName.toLowerCase() !== ctx.me.uniqueName.toLowerCase()) {
+      return fail("You can only create items assigned to yourself. An admin can create them for others.", { code: "forbidden" });
+    }
     const input = {
       type,
       title: args.title,
@@ -695,11 +741,12 @@ async function findParent(
   return { response: fail(`Nothing on the board matches “${words}”.`, { parent_types: allowed }) };
 }
 
-async function proposeUpdate(args: Args<"propose_update_work_item">, { board, actions, userKey }: ToolDeps): Promise<ToolResponse> {
+async function proposeUpdate(args: Args<"propose_update_work_item">, { board, actions, userKey, policy = ADMIN_POLICY }: ToolDeps): Promise<ToolResponse> {
   return withUnresolved(async () => {
     const ctx = await board.context();
     const before = await board.get(args.id);
     if (!before) return fail(`Work item #${args.id} does not exist.`);
+    if (!policy.canAccess(before, ctx)) return fail(NOT_YOURS, { code: "forbidden" });
 
     const changes: WorkItemPatch = {};
     if (args.state !== undefined) {
@@ -711,7 +758,7 @@ async function proposeUpdate(args: Args<"propose_update_work_item">, { board, ac
     if (args.title !== undefined && args.title !== before.title) changes.title = args.title;
     if (args.priority !== undefined && args.priority !== before.priority) changes.priority = args.priority;
     if (args.assignee !== undefined) {
-      const person = personFor(ctx, args.assignee);
+      const person = await personFor(ctx, board, args.assignee);
       if (person?.uniqueName !== before.assignedTo?.uniqueName) changes.assignedTo = person;
     }
     if (args.sprint !== undefined) {
@@ -778,9 +825,10 @@ function describeChanges(before: WorkItem, after: WorkItem, changes: WorkItemPat
   return parts.join(", ");
 }
 
-async function proposeDeleteComment(args: Args<"propose_delete_comment">, { board, actions, userKey }: ToolDeps): Promise<ToolResponse> {
-  const detail = await board.getDetail(args.id);
+async function proposeDeleteComment(args: Args<"propose_delete_comment">, { board, actions, userKey, policy = ADMIN_POLICY }: ToolDeps): Promise<ToolResponse> {
+  const [detail, ctx] = await Promise.all([board.getDetail(args.id), board.context()]);
   if (!detail) return fail(`Work item #${args.id} does not exist.`);
+  if (!policy.canAccess(detail, ctx)) return fail(NOT_YOURS, { code: "forbidden" });
   const comment = detail.comments.find((c) => c.id === args.comment_id);
   if (!comment) {
     return fail(`#${args.id} has no comment ${args.comment_id}.`, {
@@ -813,7 +861,7 @@ async function proposeDeleteComment(args: Args<"propose_delete_comment">, { boar
 
 // ---------- confirmation ----------
 
-async function confirmAction(actionId: string, { board, actions, userKey }: ToolDeps): Promise<ToolResponse> {
+async function confirmAction(actionId: string, { board, actions, userKey, policy = ADMIN_POLICY }: ToolDeps): Promise<ToolResponse> {
   const taken = actions.take(actionId, userKey);
   if (!taken.ok) {
     const message =
@@ -831,6 +879,18 @@ async function confirmAction(actionId: string, { board, actions, userKey }: Tool
 
   const { op } = taken;
   const events: WorkspaceEvent[] = [{ type: "confirmation_resolved", actionId, outcome: "confirmed" }];
+
+  // Checked again at confirm time: the item may have been reassigned since the preview, or the role changed.
+  if (!policy.seesEveryone) {
+    const ctx = await board.context();
+    const target = op.kind === "create" ? { assignedTo: op.input.assignedTo } : await board.get(op.id);
+    if (!target || !policy.canAccess(target, ctx)) {
+      return {
+        output: { ok: false, error: NOT_YOURS, code: "forbidden" },
+        uiEvents: [{ type: "confirmation_resolved", actionId, outcome: "cancelled" }, { type: "error", message: NOT_YOURS }],
+      };
+    }
+  }
 
   if (op.kind === "create") {
     const item = await board.create(op.input);

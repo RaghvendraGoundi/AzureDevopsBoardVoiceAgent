@@ -1,4 +1,4 @@
-import type { WorkItem, WorkItemComment, WorkItemDetail, WorkItemPatch } from "@/lib/devops/types";
+import type { WorkItem, WorkItemComment, WorkItemDetail, WorkItemPatch, WorkItemRef } from "@/lib/devops/types";
 
 export type AgentStatus = "idle" | "connecting" | "listening" | "processing" | "speaking" | "error";
 export type ConnectionState = "disconnected" | "connecting" | "connected" | "failed";
@@ -19,7 +19,7 @@ export interface PendingAction {
 
 /** Events emitted by the backend tools; the workspace renders from these. */
 export type WorkspaceEvent =
-  | { type: "work_items_loaded"; title: string; items: WorkItem[] }
+  | { type: "work_items_loaded"; title: string; items: WorkItem[]; ancestors?: WorkItemRef[] }
   | { type: "work_item_focused"; item: WorkItem }
   /** One item opened in full: parents, children, comments. `quiet` refreshes it without bringing it to the front. */
   | { type: "work_item_detail"; detail: WorkItemDetail; quiet?: boolean }
@@ -44,6 +44,8 @@ export type VoiceEvent =
   | WorkspaceEvent;
 
 export interface ToolResponse {
+  /** Email aliases used in `output` (alias → real), so the screen can show the real address. */
+  aliases?: Record<string, string>;
   /** Result handed back to the model as the function_call_output. */
   output: Record<string, unknown>;
   /** Events for the live workspace. */

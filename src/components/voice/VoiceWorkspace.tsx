@@ -128,6 +128,7 @@ export function VoiceWorkspace() {
       onResolve={s.resolvePending}
       onDismissError={s.dismissError}
       board={s.board}
+      onStopWaiting={s.stopWaiting}
     />
   );
 
@@ -211,6 +212,7 @@ export function VoiceWorkspace() {
                 levels={s.levels}
                 narrowCaptions={wide && (chatOpen || workOpen)}
                 onOrb={() => (live ? s.interrupt() : !locked && void s.start())}
+                onStopWaiting={s.stopWaiting}
               />
 
             </div>

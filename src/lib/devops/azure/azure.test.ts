@@ -68,7 +68,8 @@ describe("process detection", () => {
   it("reads hierarchy, states, sprints, people and paths in one parallel burst", async () => {
     const { client, calls } = fakeAdo({});
     const ctx = await loadAdoContext(client);
-    expect(calls).toHaveLength(6);
+    // Six reads in parallel, plus the project's team list for people on other teams.
+    expect(calls).toHaveLength(7);
     expect(ctx.me).toMatchObject({ displayName: "Dana Kim", uniqueName: "dana@fabrikam.com" });
     expect(ctx.hierarchy.map((l) => [l.kind, l.defaultType])).toEqual([
       ["portfolio", "Epic"],
@@ -81,6 +82,33 @@ describe("process detection", () => {
     expect(ctx.defaultArea).toBe("Fabrikam\\Web");
     expect(ctx.members.map((m) => m.displayName)).toEqual(["Luis Ortega"]);
     expect(summarizeBoard(ctx, new Date("2026-10-31T12:00:00Z"))).toMatch(/Current sprint: Sprint 42 \(Oct 26 to Nov 6, 7 days left\)/);
+  });
+
+  it("knows people from every team in the project, once each", async () => {
+    const { client } = fakeAdo({
+      "GET /_apis/projects/Fabrikam/teams": () => ({ value: [{ name: "Fabrikam Team" }, { name: "Platform" }] }),
+      "GET /_apis/projects/Fabrikam/teams/Platform/members": () => ({
+        value: [
+          { identity: { displayName: "Priya Nair", uniqueName: "priya@fabrikam.com" } },
+          { identity: { displayName: "Luis Ortega", uniqueName: "luis@fabrikam.com" } },
+        ],
+      }),
+    });
+    const ctx = await loadAdoContext(client);
+    expect(ctx.members.map((m) => m.displayName)).toEqual(["Luis Ortega", "Priya Nair"]);
+  });
+
+  it("searches the organization's people picker by name", async () => {
+    const fake = fakeAdo({
+      "POST /_apis/IdentityPicker/Identities": () => ({
+        results: [{ identities: [{ displayName: "Sam Rivera", signInAddress: "sam@fabrikam.com", localId: "x" }, { displayName: "Gone", mail: "gone@fabrikam.com", active: false }] }],
+      }),
+    });
+    const ctx = await loadAdoContext(fake.client);
+    const board = new AzureDevOpsBoard(fake.client, async () => ctx);
+    expect(await board.searchPeople("Sam")).toEqual([{ displayName: "Sam Rivera", uniqueName: "sam@fabrikam.com", id: "x" }]);
+    const call = fake.calls.find((c) => c.url.pathname.endsWith("/IdentityPicker/Identities"))!;
+    expect(call.body).toMatchObject({ query: "Sam", identityTypes: ["user"] });
   });
 
   it.each([

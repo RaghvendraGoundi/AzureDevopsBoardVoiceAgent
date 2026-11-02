@@ -22,6 +22,7 @@ import {
   History,
   Keyboard,
   Layers,
+  Lock,
   type LucideIcon,
   MessageSquareText,
   MessagesSquare,
@@ -86,6 +87,7 @@ export const CommentIcon = icon(MessageSquareText);
 export const DescriptionIcon = icon(FileText);
 export const EditIcon = icon(Pencil);
 export const ExternalIcon = icon(ExternalLink, 14);
+export const LockIcon = icon(Lock, 15);
 
 /** The work item type's icon: task, bug, story/requirement, feature/initiative, epic. */
 export function TypeIcon({ type, size = 14 }: { type: string; size?: number }) {

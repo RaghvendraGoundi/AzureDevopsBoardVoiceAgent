@@ -2,10 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { WorkspaceState } from "@/hooks/voice/workspaceReducer";
+import { ActivityStrip } from "./ActivityStrip";
 import { ConfirmationCard } from "./ConfirmationCard";
 import { BoardIcon, CloseIcon, CollapseRightIcon } from "./icons";
 import { StateBadge, WorkItemCard } from "./WorkItemCard";
 import { WorkItemDetailView } from "./WorkItemDetailView";
+import { WorkItemTree } from "./WorkItemTree";
+import { buildTree } from "@/lib/devops/tree";
 
 interface Props {
   state: WorkspaceState;
@@ -16,6 +19,8 @@ interface Props {
   onClose: () => void;
   onResolve: (actionId: string, decision: "confirm" | "cancel") => Promise<void>;
   onDismissError: (id: number) => void;
+  /** "Stop waiting" for a slow board call. */
+  onStopWaiting?: () => void;
   /** Opening items and proposing comment or description changes from the screen. */
   board: {
     open: (id: number) => Promise<boolean>;
@@ -29,12 +34,30 @@ interface Props {
 type Tab = "results" | "changes";
 
 /** What the assistant found and changed: results, the change waiting for a yes, and session activity. */
-export function WorkspacePanel({ state, variant, busy, onClose, onResolve, onDismissError, board }: Props) {
+export function WorkspacePanel({ state, variant, busy, onClose, onResolve, onDismissError, board, onStopWaiting }: Props) {
   const { results, pending, activity, errors, activeTool, focusedId, flash, boardInfo, detail } = state;
   const [tab, setTab] = useState<Tab>("results");
   const loading = activeTool !== null && !pending;
   const changes = activity.filter((a) => a.kind !== "cancelled").length;
   const scroller = useRef<HTMLDivElement>(null);
+  // Tree (grouped under epics and initiatives) or a flat list; remembered per browser.
+  const [view, setView] = useState<"tree" | "list">("tree");
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("workspace-view") === "list") setView("list");
+    } catch {
+      // Storage may be unavailable.
+    }
+  }, []);
+  const chooseView = (v: "tree" | "list") => {
+    setView(v);
+    try {
+      localStorage.setItem("workspace-view", v);
+    } catch {
+      // Storage may be unavailable; the choice just won't persist.
+    }
+  };
+  const hasTree = !!results && results.items.some((i) => i.parentId !== null);
   // Items opened from inside an item (a parent, a child), so "back" returns to where you were.
   const [trail, setTrail] = useState<Array<{ id: number; title: string }>>([]);
   useEffect(() => {
@@ -110,6 +133,7 @@ export function WorkspacePanel({ state, variant, busy, onClose, onResolve, onDis
       </div>
 
       <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-5 pt-4 pb-5" role="tabpanel" aria-labelledby="workspace-title">
+        <ActivityStrip steps={state.steps} variant="panel" onStop={onStopWaiting} />
         {errors.map((e) => (
           <div key={e.id} role="alert" className="card animate-rise flex items-start justify-between gap-3 border-danger/40! text-sm">
             <span className="text-[#ffb3bb]">{e.message}</span>
@@ -137,9 +161,20 @@ export function WorkspacePanel({ state, variant, busy, onClose, onResolve, onDis
           <>
             {pending && <ConfirmationCard key={pending.actionId} action={pending} onResolve={onResolve} />}
             {results && (
-              <div className="mt-1 flex items-baseline justify-between gap-3">
-                <h4 className="text-[15px] font-semibold">{results.title}</h4>
-                <span className="sub2 shrink-0">{results.items.length} items</span>
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <h4 className="min-w-0 truncate text-[15px] font-semibold">{results.title}</h4>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="sub2">{results.items.length} items</span>
+                  {hasTree && (
+                    <div className="viewseg" role="radiogroup" aria-label="Show as">
+                      {(["tree", "list"] as const).map((v) => (
+                        <button key={v} role="radio" aria-checked={view === v} onClick={() => chooseView(v)}>
+                          {v === "tree" ? "Tree" : "List"}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
             {loading && !results ? (
@@ -149,9 +184,19 @@ export function WorkspacePanel({ state, variant, busy, onClose, onResolve, onDis
                 <p className="card sub2 text-center">No matching work items.</p>
               ) : (
                 <div className={`flex flex-col gap-3 transition-opacity ${loading ? "opacity-50" : ""}`}>
-                  {results.items.map((item, i) => (
+                  {hasTree && view === "tree" ? (
+                    <WorkItemTree
+                      nodes={buildTree(results.items, results.ancestors)}
+                      focusedId={focusedId}
+                      flash={flash}
+                      currentSprint={sprint?.name ?? null}
+                      onOpen={(id) => void board.open(id)}
+                    />
+                  ) : (
+                  results.items.map((item, i) => (
                     <WorkItemCard key={item.id} item={item} position={i + 1} focused={item.id === focusedId} flash={flash[item.id]} currentSprint={sprint?.name ?? null} onOpen={(id) => void board.open(id)} />
-                  ))}
+                  ))
+                  )}
                   {results.items.length > 3 && <div className="listfade" aria-hidden />}
                 </div>
               )

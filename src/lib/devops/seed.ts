@@ -26,6 +26,14 @@ export function emulatedPeople(currentUser: string): { me: Person; members: Pers
   return { me: person(currentUser), members: [person("Priya Shah"), person("Marcus Lee")] };
 }
 
+/** People in the organization but not on the team: only found by name search. */
+export function emulatedOrgPeople(): Person[] {
+  return ["Jordan Blake", "Jordan Lee", "Sam Rivera"].map((displayName) => ({
+    displayName,
+    uniqueName: `${displayName.toLowerCase().replace(/[^a-z]+/g, ".")}@contoso.com`,
+  }));
+}
+
 /** Sprints 41–44, with 42 running now (it started five days ago). */
 export function emulatedSprints(now = new Date()): Sprint[] {
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());

@@ -98,14 +98,8 @@ export async function loadAdoContext(client: AdoClient): Promise<BoardContext> {
     client.request<TeamSettingsDto>("GET", `${client.teamUrl}/_apis/work/teamsettings`),
     client.request<{ value: IterationDto[] }>("GET", `${client.teamUrl}/_apis/work/teamsettings/iterations`),
     client.request<{ defaultValue?: string }>("GET", `${client.teamUrl}/_apis/work/teamsettings/teamfieldvalues`),
-    // Assigning by name needs the member list, but the tools still work without it.
-    client
-      .request<{ value: Array<{ identity: Person }> }>(
-        "GET",
-        `${client.orgUrl}/_apis/projects/${encodeURIComponent(project)}/teams/${encodeURIComponent(team)}/members`,
-        { query: { $top: 300 } },
-      )
-      .catch(() => ({ value: [] })),
+    // Assigning by name needs people, but the tools still work without them.
+    projectPeople(client, project, team).catch(() => ({ value: [] })),
   ]);
 
   const me: Person = {
@@ -131,4 +125,35 @@ export async function loadAdoContext(client: AdoClient): Promise<BoardContext> {
       .map((m) => ({ id: m.identity.id, displayName: m.identity.displayName, uniqueName: m.identity.uniqueName }))
       .filter((p) => p.uniqueName !== me.uniqueName),
   };
+}
+
+/** Teams read for the people list, at most; big projects add more people on demand (searchPeople). */
+const MAX_TEAMS = 25;
+
+/**
+ * Members of every team in the project, not just the configured one, so
+ * "what's Priya working on?" works when Priya is on another team. The
+ * configured team is read first and always included.
+ */
+async function projectPeople(client: AdoClient, project: string, team: string): Promise<{ value: Array<{ identity: Person }> }> {
+  const base = `${client.orgUrl}/_apis/projects/${encodeURIComponent(project)}/teams`;
+  const membersOf = (t: string) =>
+    client
+      .request<{ value: Array<{ identity: Person }> }>("GET", `${base}/${encodeURIComponent(t)}/members`, { query: { $top: 300 } })
+      .then((r) => r.value)
+      .catch(() => [] as Array<{ identity: Person }>);
+  const [own, teams] = await Promise.all([
+    membersOf(team),
+    client.request<{ value: Array<{ name: string }> }>("GET", base, { query: { $top: 200 } }).then((r) => r.value).catch(() => []),
+  ]);
+  const others = teams.map((t) => t.name).filter((n) => n !== team).slice(0, MAX_TEAMS - 1);
+  const rest = (await Promise.all(others.map(membersOf))).flat();
+  const seen = new Set<string>();
+  const value = [...own, ...rest].filter((m) => {
+    const key = m.identity?.uniqueName?.toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return { value };
 }

@@ -76,6 +76,36 @@ describe("list_work_items for portfolio levels", () => {
   });
 });
 
+describe("hierarchy for the tree", () => {
+  it("sends each result's parents up to the epic, once each", async () => {
+    const r = await run("list_work_items", {});
+    const ev = r.uiEvents[0] as { type: string; ancestors: Array<{ id: number; parentId: number | null }> };
+    const ids = ev.ancestors.map((a) => a.id);
+    expect(ids).toContain(1010); // Feature: Secure sign-in
+    expect(ids).toContain(1001); // Epic: Customer portal v2
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ev.ancestors.find((a) => a.id === 1001)?.parentId).toBeNull();
+  });
+});
+
+describe("finding people", () => {
+  it("finds someone outside the team by name in the organization", async () => {
+    const r = await run("list_work_items", { assignee: "Sam Rivera", sprint: "any" });
+    expect(r.output).toMatchObject({ ok: true, count: 0 });
+  });
+
+  it("asks which one when a name matches several people", async () => {
+    const r = await run("list_work_items", { assignee: "Jordan" });
+    expect(r.output).toMatchObject({ ok: false, matches: ["Jordan Blake", "Jordan Lee"] });
+    expect(String(r.output.error)).toMatch(/More than one person matches "Jordan"/);
+  });
+
+  it("prefers a teammate over others in the organization with a similar name", async () => {
+    const r = await run("list_work_items", { assignee: "Priya", sprint: "any" });
+    expect((r.output.items as Brief[]).every((i) => i.assigned_to === "Priya Shah")).toBe(true);
+  });
+});
+
 describe("comments and descriptions", () => {
   const confirm = (p: { output: Record<string, unknown> }) => run("confirm_action", { action_id: p.output.action_id });
 

@@ -10,6 +10,8 @@ import {
   type ConversationSummary,
   type ConversationTurn,
 } from "./types";
+import { db } from "@/lib/db/pool";
+import { PgConversationStore } from "./pgStore";
 
 /**
  * Conversations, one JSON file per user under .data/conversations. The user
@@ -58,7 +60,22 @@ export function memoryConversations(): ConversationFiles {
   };
 }
 
-export class ConversationStore {
+/** What the API routes need; the file store and the Postgres store both provide it. */
+export interface ConversationRepo {
+  list(userKey: string): Promise<ConversationSummary[]>;
+  get(userKey: string, id: string): Promise<Conversation | null>;
+  create(userKey: string, title?: string): Promise<Conversation>;
+  append(
+    userKey: string,
+    id: string,
+    update: { turns?: ConversationTurn[]; changes?: ConversationChange[]; title?: string },
+  ): Promise<ConversationSummary | null>;
+  remove(userKey: string, id: string): Promise<boolean>;
+}
+
+export const LIMITS = { MAX_CONVERSATIONS, MAX_TURNS, MAX_CHANGES };
+
+export class ConversationStore implements ConversationRepo {
   private queues = new Map<string, Promise<unknown>>();
 
   constructor(
@@ -136,10 +153,13 @@ export class ConversationStore {
   }
 }
 
-const globalForStore = globalThis as unknown as { __conversationStore?: ConversationStore };
+const globalForStore = globalThis as unknown as { __conversationStore?: ConversationRepo };
 
-export function getConversationStore(): ConversationStore {
-  globalForStore.__conversationStore ??= new ConversationStore(fileConversations(path.join(process.cwd(), ".data", "conversations")));
+/** PostgreSQL when a database is configured, otherwise one JSON file per user under .data/. */
+export function getConversationStore(): ConversationRepo {
+  globalForStore.__conversationStore ??= db()
+    ? new PgConversationStore(() => db()!)
+    : new ConversationStore(fileConversations(path.join(process.cwd(), ".data", "conversations")));
   return globalForStore.__conversationStore;
 }
 

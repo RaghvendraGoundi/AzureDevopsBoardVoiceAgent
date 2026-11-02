@@ -1,6 +1,7 @@
 "use client";
 
 import type { AgentStatus, ToolResponse, VoiceEvent } from "@/types/voice";
+import { PROACTIVE_STATUS_MS, RunningTools, STATUS_AFTER_MS, statusNote } from "./toolRun";
 import {
   decideTurn,
   isRealSpeech,
@@ -47,6 +48,8 @@ export type InputMode = "handsfree" | "ptt";
 
 export interface RealtimeClientOptions {
   onEvent: (event: VoiceEvent) => void;
+  /** Each connection stage as it completes, with ms since connect started (telemetry). */
+  onStage?: (stage: ConnectStage, ms: number) => void;
   /** Runs a tool call on the backend. */
   executeTool: (name: string, args: unknown) => Promise<ToolResponse>;
   /** The assistant ended the call itself (the user said they were done). */
@@ -90,6 +93,30 @@ const RESUME_NOTE =
   "including any step you were about to take. Don't start over or apologise.";
 
 export class MicrophoneError extends Error {}
+
+/** Where connecting got to: shown to the user and recorded in telemetry. */
+export type ConnectStage = "mic" | "mint" | "offer" | "channel" | "ready";
+
+/** Connecting failed at `stage`; `retryable` failures get one automatic retry. */
+export class ConnectError extends Error {
+  constructor(
+    message: string,
+    readonly stage: ConnectStage,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+  }
+}
+
+export const STAGE_MESSAGES: Record<Exclude<ConnectStage, "mic" | "mint">, string> = {
+  offer: "Couldn't reach the voice service to start the call (no answer within 15 s). A firewall or proxy may be blocking it.",
+  channel:
+    "Reached the voice service, but the audio connection couldn't be set up. This network may block WebRTC (UDP). Try the connection check at /diagnostics.",
+  ready: "The voice service didn't finish setting up the call. Try again in a moment.",
+};
+
+/** How long to wait for the voice service to answer the call offer. */
+const OFFER_TIMEOUT_MS = 15_000;
 
 export class RealtimeClient {
   private pc: RTCPeerConnection | null = null;
@@ -142,6 +169,11 @@ export class RealtimeClient {
   private responseActive = false;
   private currentResponseId: string | null = null;
   private toolsInFlight = false;
+  /** Running board calls: bounded, cancellable, and timed for status updates. */
+  private tools = new RunningTools();
+  private statusTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A status update was already given for the current tool run. */
+  private statusGiven = false;
   private wantResponse = false;
   /** Responses we cancelled; their late transcript/audio events are ignored. */
   private cancelledResponses = new Set<string>();
@@ -171,6 +203,11 @@ export class RealtimeClient {
     // Mint the session key while the mic permission prompt is up, not after.
     const credsPromise = fetchCredentials();
     credsPromise.catch(() => undefined); // handled when awaited below
+    const t0 = performance.now();
+    let stage: ConnectStage = "mic";
+    const reached = (s: ConnectStage) => {
+      this.opts.onStage?.(s, Math.round(performance.now() - t0));
+    };
 
     try {
       // Auto gain is off: it boosts the noise floor whenever you're quiet.
@@ -187,6 +224,8 @@ export class RealtimeClient {
           );
         });
 
+      reached("mic");
+      stage = "mint";
       this.audioCtx = new AudioContext();
       this.micAnalyser = this.analyse(this.mic);
 
@@ -224,20 +263,28 @@ export class RealtimeClient {
       await pc.setLocalDescription(offer);
 
       const creds = await credsPromise;
+      reached("mint");
+      stage = "offer";
       this.handsFreeTurnDetection = creds.turnDetection;
       this.speakingTurnDetection = creds.speakingTurnDetection;
       const res = await fetch(creds.webrtcUrl, {
         method: "POST",
         body: offer.sdp,
         headers: { Authorization: `Bearer ${creds.clientSecret}`, "Content-Type": "application/sdp" },
+        signal: AbortSignal.timeout(OFFER_TIMEOUT_MS),
       });
-      if (!res.ok) throw new Error(`Voice service refused the call (${res.status}).`);
+      if (!res.ok) throw new ConnectError(`The voice service refused the call (${res.status}).`, "offer", res.status >= 500 || res.status === 429);
       await pc.setRemoteDescription({ type: "answer", sdp: await res.text() });
+      reached("offer");
+      stage = "channel";
       await opened;
+      reached("channel");
+      stage = "ready";
 
       // Only say "Listening" once the server has actually set up the session,
       // so the first words aren't spoken into a call that isn't ready yet.
       await Promise.race([ready, new Promise((r) => setTimeout(r, SESSION_READY_TIMEOUT_MS))]);
+      reached("ready");
 
       if (this.mode === "ptt") this.applyMode();
       this.emit({ type: "connection", state: "connected" });
@@ -245,10 +292,20 @@ export class RealtimeClient {
       this.chime();
     } catch (err) {
       this.teardown();
-      const message = err instanceof Error ? err.message : "Couldn't start the voice session.";
-      this.emit({ type: "connection", state: "failed", error: message });
+      const failure =
+        err instanceof MicrophoneError || err instanceof ConnectError
+          ? err
+          : stage === "mint"
+            ? new ConnectError(
+                err instanceof Error ? err.message : "Couldn't start the voice session.",
+                "mint",
+                // A refused key or missing setup won't fix itself on a retry.
+                !(err instanceof Error && /refused|not configured|sign in|authenticate/i.test(err.message)),
+              )
+            : new ConnectError(STAGE_MESSAGES[stage as keyof typeof STAGE_MESSAGES] ?? "Couldn't start the voice session.", stage, true);
+      this.emit({ type: "connection", state: "failed", error: failure.message });
       this.emit({ type: "agent_status", status: "error" });
-      throw err;
+      throw failure;
     }
   }
 
@@ -461,7 +518,38 @@ export class RealtimeClient {
   private acceptTurn() {
     this.clippedByNoise = false;
     if (this.assistantBusy()) this.interrupt();
+    // The user spoke while the board is still working: answer now with a status
+    // update instead of going silent until the tool finishes.
+    const running = this.toolsInFlight ? this.tools.longest() : null;
+    if (running && running.ms >= STATUS_AFTER_MS) {
+      this.wantResponse = true; // the user's question is answered properly once the tool is done
+      this.statusReply(statusNote(running, true));
+      return;
+    }
     this.requestResponse();
+  }
+
+  /** A short spoken status while a tool is still running (doesn't wait for it). */
+  private statusReply(note: string) {
+    if (this.responseActive || this.responseRequested || this.ending) return;
+    this.statusGiven = true;
+    this.send({ type: "conversation.item.create", item: { type: "message", role: "system", content: [{ type: "input_text", text: note }] } });
+    this.responseRequested = true;
+    this.send({ type: "response.create" });
+  }
+
+  /** Still running after a few seconds: say so, once per tool run. */
+  private armStatusTimer() {
+    if (this.statusTimer) clearTimeout(this.statusTimer);
+    this.statusTimer = setTimeout(() => {
+      const running = this.tools.longest();
+      if (this.toolsInFlight && running && !this.statusGiven) this.statusReply(statusNote(running, false));
+    }, PROACTIVE_STATUS_MS);
+  }
+
+  /** "Stop waiting": running board calls end now with a cancellation result the model can explain. */
+  cancelTools() {
+    this.tools.cancelAll();
   }
 
   /** A committed user turn that was just noise: remove it so the model never sees it. */
@@ -539,6 +627,9 @@ export class RealtimeClient {
   }
 
   private teardown() {
+    this.tools.cancelAll();
+    if (this.statusTimer) clearTimeout(this.statusTimer);
+    this.statusTimer = null;
     this.stopQuietWatch();
     this.pendingTurns.forEach((t) => clearTimeout(t));
     this.pendingTurns.clear();
@@ -767,6 +858,8 @@ export class RealtimeClient {
 
     let needsReply = false;
     this.toolsInFlight = true;
+    this.statusGiven = false;
+    this.armStatusTimer();
     try {
       for (const call of calls) {
         if (call.name === END_TOOL) {
@@ -788,21 +881,15 @@ export class RealtimeClient {
         }
         this.emit({ type: "tool_started", callId: call.call_id, tool: call.name, args });
 
-        let result: ToolResponse;
-        try {
-          result = await this.opts.executeTool(call.name, args);
-        } catch {
-          result = {
-            output: { ok: false, error: "The board service couldn't be reached." },
-            uiEvents: [{ type: "error", message: "The board service couldn't be reached." }],
-          };
-        }
+        const result = await this.tools.run(call.call_id, call.name, () => this.opts.executeTool(call.name, args));
         result.uiEvents.forEach((e) => this.emit(e));
         this.emit({ type: "tool_finished", callId: call.call_id, tool: call.name, ok: result.output.ok !== false });
         this.sendToolOutput(call.call_id, result.output);
       }
     } finally {
       this.toolsInFlight = false;
+      if (this.statusTimer) clearTimeout(this.statusTimer);
+      this.statusTimer = null;
     }
 
     if (this.ending) return;

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { TranscriptEntry } from "@/hooks/voice/workspaceReducer";
 import type { ConversationSummary } from "@/lib/conversations/types";
 import type { WorkItem } from "@/lib/devops/types";
+import { showAliases } from "@/lib/privacy/aliasesClient";
 import { relativeTime } from "./time";
 import { CloseIcon, CollapseLeftIcon, HistoryIcon, PlusIcon, SendIcon, TrashIcon, WorkspaceIcon } from "./icons";
 
@@ -176,7 +177,7 @@ export function ChatPanel(p: Props) {
                   <em>{clockTime(m.at)}</em>
                 </span>
                 <div className="bub">
-                  {m.text || <span className="text-muted italic">…</span>}
+                  {(m.role === "assistant" ? showAliases(m.text) : m.text) || <span className="text-muted italic">…</span>}
                   {m.interrupted && <span className="ml-1 text-xs text-muted italic">(interrupted)</span>}
                 </div>
                 {refs.length > 0 && (

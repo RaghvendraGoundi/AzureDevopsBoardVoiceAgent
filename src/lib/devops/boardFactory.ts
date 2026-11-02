@@ -1,4 +1,5 @@
 import { entraConfig } from "@/lib/auth/entra";
+import { getPrincipal } from "@/lib/auth/principal";
 import { getAzureDevOpsCredential } from "./azure/auth";
 import { AzureDevOpsBoard } from "./azure/board";
 import { AdoClient, type AdoConfig } from "./azure/client";
@@ -52,7 +53,8 @@ function logTiming(label: string, ms: number, status: number) {
 /** Who is asking: scopes conversations and confirmations. Null when Azure mode has no credential. */
 export async function getUserKey(headers: Headers): Promise<string | null> {
   // With Entra sign-in, saved conversations belong to the signed-in user even on the emulated board.
-  if (boardProvider() === "emulated") return entraConfig() ? ((await getAzureDevOpsCredential(headers))?.userKey ?? null) : "local";
+  if (entraConfig()) return (await getPrincipal(headers))?.userKey ?? null;
+  if (boardProvider() === "emulated") return "local";
   return (await getAzureDevOpsCredential(headers))?.userKey ?? null;
 }
 

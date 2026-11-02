@@ -1,0 +1,11 @@
+node_modules
+.next
+.data
+.env*
+!.env.example
+design-screenshots
+coverage
+.git
+.github
+.claude
+public/__voice_test

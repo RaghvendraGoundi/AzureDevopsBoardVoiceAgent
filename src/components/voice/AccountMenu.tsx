@@ -7,6 +7,8 @@ import { ChevronDownIcon } from "./icons";
 interface SessionUser {
   name?: string | null;
   email?: string | null;
+  role?: "user" | "admin";
+  signedIn?: boolean;
 }
 
 const initials = (name: string) =>
@@ -24,9 +26,9 @@ export function AccountMenu({ disabled }: { disabled?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch("/api/auth/session")
+    fetch("/api/me")
       .then((r) => (r.ok ? r.json() : null))
-      .then((s: { user?: SessionUser } | null) => setUser(s?.user ?? null))
+      .then((me: SessionUser | null) => setUser(me?.signedIn ? me : null))
       .catch(() => setUser(null));
   }, []);
 
@@ -58,7 +60,17 @@ export function AccountMenu({ disabled }: { disabled?: boolean }) {
         <div className="acct-menu panel animate-rise" role="dialog" aria-label="Account">
           <p className="text-[14px] font-semibold text-[#f3f7ff]">{name}</p>
           {user.email && <p className="sub2 truncate">{user.email}</p>}
-          <p className="sub2 mt-2 text-xs!">Signed in with Microsoft Entra ID</p>
+          <p className="sub2 mt-2 text-xs!">
+            Signed in with Microsoft Entra ID · {user.role === "admin" ? "Admin" : "User"}
+          </p>
+          {user.role === "admin" && (
+            <a className="pill sm mt-3 w-full" href="/admin">
+              People and calls
+            </a>
+          )}
+          <a className="pill sm mt-3 w-full" href="/diagnostics">
+            Connection check
+          </a>
           <button
             className="pill sm mt-3 w-full"
             disabled={disabled}

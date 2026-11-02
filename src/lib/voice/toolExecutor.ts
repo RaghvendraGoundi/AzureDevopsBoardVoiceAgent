@@ -1,3 +1,5 @@
+import { rememberAliases } from "@/lib/privacy/aliasesClient";
+import { currentTelemetrySession } from "@/lib/telemetry/client";
 import type { ToolResponse } from "@/types/voice";
 import type { SessionCredentials } from "./realtimeClient";
 
@@ -9,14 +11,17 @@ export function signInAgainOn401(res: Response) {
 }
 
 async function postJson(url: string, body: unknown): Promise<ToolResponse> {
+  const session = currentTelemetrySession();
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(session && { "x-voice-session": session }) },
     body: JSON.stringify(body),
   });
   signInAgainOn401(res);
   if (!res.ok) throw new Error(`${url} responded ${res.status}`);
-  return (await res.json()) as ToolResponse;
+  const result = (await res.json()) as ToolResponse;
+  rememberAliases(result.aliases);
+  return result;
 }
 
 /** Forwards a model function call to the backend, which validates and executes it. */

@@ -50,6 +50,8 @@ export interface WorkItemRef {
   title: string;
   type: string;
   state: string;
+  /** Set on ancestors loaded for the hierarchy tree. */
+  parentId?: number | null;
 }
 
 export interface WorkItemComment {
@@ -66,6 +68,8 @@ export interface WorkItemDetail extends WorkItem {
   children: WorkItem[];
   /** Newest first. */
   comments: WorkItemComment[];
+  /** Someone else's item seen by a regular user: title and context only (no description or comments). */
+  restricted?: boolean;
 }
 
 export interface Sprint {

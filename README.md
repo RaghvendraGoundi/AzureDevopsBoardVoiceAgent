@@ -12,6 +12,11 @@
 - **Puts work in the right place.** Tasks go under a story and follow its sprint, stories go under an initiative or feature, and portfolio items stay on the backlog. If a parent is missing, it suggests candidates instead of creating an orphan.
 - **A workspace that shows what it heard.** Results appear as cards. Opening one shows its parent chain (each clickable), details, description, child items and comments. Changes animate in, and a session timeline keeps track of what happened.
 - **22 voices with previews.** Pick an engine and voice and hear a sample before you choose.
+- **Runs on Azure AI Foundry with managed identity**, or on the OpenAI API, or on Foundry with an API key.
+- **Users and admins.** Signed in with Microsoft Entra ID, users see and change only their own items (plus parent titles for context); admins see everyone's and manage roles.
+- **Finds teammates by name, never shows the model their email.** People come from every team in the project and the organization's directory; email addresses are replaced with aliases before anything reaches the model.
+- **Built for real networks.** Every board call has a deadline, the assistant tells you what it's still doing if you talk during a slow lookup, and a connection check shows exactly what a network blocks.
+- **Conversations and telemetry in PostgreSQL**, with OpenTelemetry to Application Insights and an admin view of recent calls, errors and tool latency.
 - **Real Azure DevOps or a local emulator.** The same tools run against the Azure DevOps REST API (7.1) or a built-in emulated board, so you can try it without an Azure account.
 
 | | |
@@ -20,6 +25,8 @@
 | **Start:** tap the orb or press Space. The assistant greets you first. | **Engine & voice:** compare the engines and preview every voice. |
 | ![A change waiting for confirmation](docs/screenshots/confirm.jpg) | ![A user story opened with its parents, children and comments](docs/screenshots/detail.jpg) |
 | **Your call:** a before → after preview that waits for your yes. | **Item detail:** parents, children, description and comments. |
+
+Results are grouped as a **tree** (Epic → Initiative/Feature → Story → Task), with the items above them shown as context; switch to a flat list any time.
 
 ## Quick start
 
@@ -86,6 +93,18 @@ flowchart LR
 | `propose_delete_comment` | Preview removing one comment. |
 | `confirm_action` / `cancel_action` | Apply or drop a previewed change, only after the user's yes. |
 
+## Models: OpenAI or Azure AI Foundry
+
+| Setup | Settings |
+|---|---|
+| OpenAI API | `VOICE_PROVIDER=openai`, `OPENAI_API_KEY` |
+| Azure AI Foundry, API key | `VOICE_PROVIDER=azure`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_REALTIME_DEPLOYMENT` |
+| **Azure AI Foundry, managed identity** | `VOICE_PROVIDER=azure`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_REALTIME_DEPLOYMENT`, no key (or `AZURE_AUTH=managed-identity`) |
+
+- **How managed identity works:** the server gets an Entra token for Azure AI services from the app's managed identity. In Azure that's the app's identity (set `AZURE_CLIENT_ID` for a user-assigned one); locally it's whoever ran `az login`. Give that identity the **Cognitive Services OpenAI User** role on the Foundry resource. No keys are stored, and the browser only ever gets a short-lived voice session.
+- **GPT-Live:** it uses the same provider unless `LIVE_PROVIDER` says otherwise. On Foundry its model and backend model are deployment names (`AZURE_OPENAI_LIVE_DEPLOYMENT`, `LIVE_BACKEND_MODEL`). If your resource serves GPT-Live at a different path, set `AZURE_LIVE_SESSIONS_URL`.
+- **Timeouts:** starting a session has a 10-second deadline and one retry on 429 or 5xx, so a blocked network fails fast with a clear message instead of hanging.
+
 ## Connecting Azure DevOps
 
 1. In `.env.local` set `BOARD_PROVIDER=azure`, `AZURE_DEVOPS_ORG`, `AZURE_DEVOPS_PROJECT`, and `AZURE_DEVOPS_TEAM` if your team isn't called "&lt;project&gt; Team".
@@ -133,13 +152,63 @@ export AZDO_PAT=...                            # or leave unset to be prompted (
 python3 scripts/azure_boards_setup.py
 ```
 
+## Users and admins
+
+- **`ADMIN_EMAIL`** (one or more, comma separated) is always an admin. Admins open **People and calls** from the account menu (`/admin`), where they can promote anyone who has signed in.
+- **Users** see and change only items assigned to them. Other items show only their title and place in the hierarchy. The assistant is told the user's role, and every write is checked when it's proposed and again when it's confirmed ([`src/lib/devops/policy.ts`](src/lib/devops/policy.ts)).
+- **Azure DevOps still applies its own permissions**, because calls are made with the user's own token.
+- **Without Entra sign-in** (local runs), the local user is an admin; set `LOCAL_ROLE=user` to try the user view.
+
+## Data and observability
+
+- **PostgreSQL** (Azure Database for PostgreSQL in production) stores:
+  - **users and roles;**
+  - **conversations** (turns and board changes);
+  - **telemetry:** voice sessions with connect time and how they ended, every tool call with duration and outcome, and browser events such as connection stages, retries and failures.
+
+  Tool arguments are stored as the model sent them, so emails are already aliased. Without a database the app uses local files, and keeps telemetry in memory.
+- **Connecting:** use `DATABASE_URL`, or `PGHOST`, `PGDATABASE` and `PGUSER` with `PG_AUTH=managed-identity`, where the password is an Entra token from the app's identity.
+- **Migrations** run on first use (`db/migrations`); `npm run db:migrate` runs them explicitly. `npm run db:purge` applies `RETENTION_DAYS`.
+- **OpenTelemetry:** set `APPLICATIONINSIGHTS_CONNECTION_STRING` to send traces of requests, outbound calls, Postgres and every tool call to Application Insights.
+- **Health:** `GET /api/health` reports configuration and database health for your host's probes.
+
+## When a call won't connect
+
+Open **Connection check** from the account menu (`/diagnostics`). It runs these checks in order:
+- the server's configuration;
+- whether the server can reach the voice service;
+- the Azure DevOps board and the database;
+- the microphone;
+- whether the network allows WebRTC audio (UDP);
+- a real test call, with how long each stage took.
+
+Corporate VPNs and proxies that block UDP are the usual cause. The check says so plainly.
+
+During a call, the activity strip shows the running board step with a timer. After 8 seconds it says "Taking longer than usual" and offers **Stop waiting**. The assistant gives a spoken update if a lookup runs long or if you talk during it, so it never just goes quiet.
+
+## Deploying to Azure
+
+1. **Build the image:** `docker build -t devops-voice .`. It's a standalone Next.js server that runs as a non-root user and has a `/api/health` health check.
+2. **Run it** on Azure Container Apps or App Service with a **managed identity**, and give the identity:
+   - **Cognitive Services OpenAI User** on the Foundry resource;
+   - a Postgres role on Azure Database for PostgreSQL (with Entra authentication enabled), named in `PGUSER`.
+3. **Set the environment:**
+   - the Foundry settings above;
+   - the Entra ID sign-in settings, with `AUTH_URL` set to the public URL and its `/api/auth/callback/microsoft-entra-id` added to the app registration;
+   - `ADMIN_EMAIL`;
+   - the `PG*` settings with `PG_AUTH=managed-identity`;
+   - optionally `APPLICATIONINSIGHTS_CONNECTION_STRING`.
+4. **Check it:** watch the server log for `[config]` warnings at startup, then run `/diagnostics` from a browser on the target network.
+
 ## Configuration
 
 All settings live in `.env.local`; [`.env.example`](.env.example) documents each one.
 
 | Variable | Default | |
 |---|---|---|
-| `VOICE_PROVIDER` | `openai` | `openai` or `azure` (Azure OpenAI Realtime) |
+| `VOICE_PROVIDER`, `LIVE_PROVIDER` | `openai` | `openai` or `azure` (Azure AI Foundry) for Realtime, and for GPT-Live if different |
+| `AZURE_AUTH`, `AZURE_CLIENT_ID` | managed identity | `managed-identity` or `api-key`; the user-assigned identity's client id |
+| `AZURE_OPENAI_REALTIME_DEPLOYMENT`, `AZURE_OPENAI_LIVE_DEPLOYMENT` | — | Foundry deployment names |
 | `OPENAI_API_KEY` | — | Server-side only; the browser gets short-lived sessions |
 | `OPENAI_REALTIME_MODEL` | `gpt-realtime-2.1` | Realtime model |
 | `REALTIME_VOICE` / `LIVE_VOICE` | `marin` | Default voices (users can pick their own in the app) |
@@ -149,6 +218,9 @@ All settings live in `.env.local`; [`.env.example`](.env.example) documents each
 | `AZURE_DEVOPS_ORG`, `_PROJECT`, `_TEAM`, `_PAT` | — | See *Connecting Azure DevOps* |
 | `AUTH_MICROSOFT_ENTRA_ID_TENANT_ID`, `_ID`, `_SECRET`, `AUTH_SECRET` | — | Sign-in with Microsoft Entra ID (see above); `AUTH_URL` when not on localhost |
 | `BOARD_CURRENT_USER` | `Demo User` | Who "me" is on the emulated board |
+| `ADMIN_EMAIL`, `LOCAL_ROLE` | — | Admins; the local user's role without sign-in |
+| `DATABASE_URL` or `PGHOST`/`PGDATABASE`/`PGUSER`/`PG_AUTH` | local files | PostgreSQL; `DB_AUTO_MIGRATE`, `RETENTION_DAYS` |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | — | OpenTelemetry to Azure Monitor |
 
 ## Project structure
 
@@ -156,8 +228,11 @@ All settings live in `.env.local`; [`.env.example`](.env.example) documents each
 src/
   auth.ts                 Auth.js sign-in (Microsoft Entra ID)
   middleware.ts           requires sign-in when Entra ID is configured
+  instrumentation.ts      startup config checks and OpenTelemetry
   app/                    Next.js routes
     signin/               the sign-in page
+    admin/                people, roles and recent calls (admins)
+    diagnostics/          the connection check
     voice/                the voice page
     board/                a simple sprint board view
     api/voice/            session (Realtime), live (GPT-Live), tools, actions
@@ -166,13 +241,20 @@ src/
   components/voice/       orb, call dock, chat, workspace, item detail, picker
   hooks/voice/            session state (useVoiceSession) and the workspace reducer
   lib/
-    auth/                 Entra ID settings, token refresh, sign-in gating
+    auth/                 Entra ID settings, token refresh, sign-in gating, who's calling
+    azure/                managed-identity tokens (Foundry, Postgres)
+    db/                   PostgreSQL pool and test database
+    privacy/              email aliasing for everything sent to the model
+    telemetry/            tool calls, sessions and browser events
+    users/                users and roles
     devops/               board model, process rules, tools, confirmations, caching
       azure/              Azure DevOps REST client, context loader, repository
     voice/                Realtime and GPT-Live clients, prompts, turn-taking, voices
     conversations/        conversation storage and resume
   types/                  shared event types
+db/migrations/            SQL migrations
 scripts/
+  db.mjs                  migrate and purge the database
   azure_boards_setup.py   create and seed a demo Azure DevOps project
   make-voice-samples.mjs  record the voice previews in public/voices
   reset-board.mjs         reseed the emulated board
@@ -193,7 +275,9 @@ The unit tests cover:
 - process rules (types, states, sprints, people);
 - the tools and the confirmation lifecycle, including expiry, single use and per-user ownership;
 - the Azure DevOps adapter against a fake API (WIQL, batching, JSON Patch, revision checks, comments, retries and timeouts);
-- caching, the auth hook, both voice clients (turn-taking, interruptions, overlapping GPT-Live hand-offs), session config, and the UI reducer.
+- caching, the auth hook, both voice clients (turn-taking, interruptions, overlapping GPT-Live hand-offs, status updates during slow tools), tool deadlines and cancellation, session config, and the UI reducer;
+- providers (OpenAI, Foundry key, Foundry managed identity), roles and the user/admin policy on every tool, email redaction, finding people by name, and the hierarchy tree;
+- the PostgreSQL stores for conversations, users and telemetry: against real Postgres in CI, and PGlite (Postgres in WebAssembly) locally, so no database server is needed.
 
 GitHub Actions runs the type-check, tests and build on every push and pull request ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
@@ -203,9 +287,11 @@ For end-to-end checks with real speech against the real voice service, see [scri
 
 - Sign-in with Microsoft Entra ID (optional): pages and APIs require a signed-in user, and the board acts with that user's own Azure DevOps permissions.
 - API keys and Azure DevOps tokens stay on the server, in an encrypted HTTP-only cookie for user tokens. The browser only gets a short-lived voice session (Realtime), or talks through the server (GPT-Live).
-- Every board write needs an explicit confirmation tied to the user who proposed it.
+- Every board write needs an explicit confirmation tied to the user who proposed it, and regular users can only open and change their own items.
+- The model never sees email addresses: they're replaced with aliases in everything sent to it and swapped back only on the server.
+- Models and the database can use the app's managed identity, so no keys need to be stored.
 - `.env.local` and `.data/` (the emulated board and saved conversations) are git-ignored.
 
 ## Tech
 
-Next.js 15 (App Router) · React 19 · TypeScript · Auth.js (Microsoft Entra ID) · Tailwind CSS 4 · zod · Vitest · WebRTC · OpenAI Realtime and GPT-Live · Azure DevOps REST API 7.1 · Lucide icons
+Next.js 15 (App Router) · React 19 · TypeScript · Auth.js (Microsoft Entra ID) · Azure AI Foundry · Azure Identity · PostgreSQL · OpenTelemetry · Tailwind CSS 4 · zod · Vitest · WebRTC · OpenAI Realtime and GPT-Live · Azure DevOps REST API 7.1 · Lucide icons

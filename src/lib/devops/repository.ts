@@ -1,10 +1,12 @@
 import type {
   BoardContext,
+  Person,
   CreateWorkItemInput,
   WorkItem,
   WorkItemDetail,
   WorkItemPatch,
   WorkItemQuery,
+  WorkItemRef,
 } from "./types";
 
 /**
@@ -24,6 +26,10 @@ export interface WorkItemRepository {
   update(id: number, patch: WorkItemPatch, expectedRev?: number): Promise<WorkItem>;
   /** Removes one comment from an item's discussion. */
   deleteComment(itemId: number, commentId: number): Promise<void>;
+  /** The parent chains of `items` (everything above them, once each), for the hierarchy tree. */
+  ancestorsOf?(items: WorkItem[]): Promise<WorkItemRef[]>;
+  /** People in the organization matching a name, beyond the project's teams. */
+  searchPeople?(text: string): Promise<Person[]>;
 }
 
 export type WorkItemErrorCode =

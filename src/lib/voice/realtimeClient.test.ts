@@ -107,6 +107,36 @@ describe("reply scheduling", () => {
 });
 
 describe("status after interruption", () => {
+  it("gives a spoken status update when the user talks while a tool has been running a while", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date", "performance"] });
+    const { server, sent, sentTypes } = setup(() => new Promise<ToolResponse>(() => undefined));
+    spoken(server, "u1");
+    server({ type: "response.created", response: { id: "r1" } });
+    server({
+      type: "response.done",
+      response: { id: "r1", status: "completed", output: [{ type: "function_call", call_id: "c1", name: "list_work_items", arguments: "{}" }] },
+    });
+    await vi.advanceTimersByTimeAsync(3000);
+    spoken(server, "u2");
+    await vi.advanceTimersByTimeAsync(0);
+    const note = sent.find((e) => e.type === "conversation.item.create" && JSON.stringify(e).includes("[status]"));
+    expect(JSON.stringify(note)).toMatch(/still running/);
+    expect(sentTypes().filter((t) => t === "response.create")).toHaveLength(2);
+  });
+
+  it("says it's still working by itself when a tool runs long", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date", "performance"] });
+    const { server, sent } = setup(() => new Promise<ToolResponse>(() => undefined));
+    spoken(server, "u1");
+    server({ type: "response.created", response: { id: "r1" } });
+    server({
+      type: "response.done",
+      response: { id: "r1", status: "completed", output: [{ type: "function_call", call_id: "c1", name: "list_work_items", arguments: "{}" }] },
+    });
+    await vi.advanceTimersByTimeAsync(7500);
+    expect(sent.some((e) => JSON.stringify(e).includes("still working on it"))).toBe(true);
+  });
+
   it("ignores late transcript from a cancelled reply instead of flipping back to speaking", () => {
     const { server, statuses, events } = setup();
     spoken(server, "u1");

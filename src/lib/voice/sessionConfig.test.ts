@@ -20,7 +20,7 @@ describe("resolveProvider", () => {
       AZURE_OPENAI_REALTIME_DEPLOYMENT: "my-rt",
     } as unknown as NodeJS.ProcessEnv);
     expect(p.clientSecretUrl).toBe("https://res.openai.azure.com/openai/v1/realtime/client_secrets");
-    expect(p.authHeaders).toEqual({ "api-key": "k" });
+    expect(p.auth).toBe("api-key");
     expect(p.model).toBe("my-rt");
   });
 });

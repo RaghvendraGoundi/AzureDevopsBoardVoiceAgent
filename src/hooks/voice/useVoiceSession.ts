@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { runDemo } from "@/lib/voice/demoScript";
 import { LiveClient } from "@/lib/voice/liveClient";
-import { RealtimeClient, type InputMode, type SessionCredentials } from "@/lib/voice/realtimeClient";
+import { ConnectError, RealtimeClient, type InputMode, type SessionCredentials } from "@/lib/voice/realtimeClient";
 import { executeToolRemote, fetchSessionCredentials, resolveActionRemote } from "@/lib/voice/toolExecutor";
+import { flush as flushTelemetry, newTelemetrySession, track } from "@/lib/telemetry/client";
 import { greetingInstruction } from "@/lib/voice/greeting";
 import { voicesFor } from "@/lib/voice/voices";
 import type { BoardInfo } from "@/lib/devops/briefing";
@@ -72,24 +73,43 @@ export function useVoiceSession() {
     // The assistant hung up after the user said they were done.
     const onEnded = () => {
       if (clientRef.current !== client) return;
+      track("session_ended", { engine, endedBy: "assistant" });
+      flushTelemetry();
       clientRef.current = null;
       setMuted(false);
       setTalking(false);
       prefetch();
     };
-    const client =
+    const onStage = (stage: string, ms: number) => track("connect_stage", { engine, stage, ms });
+    const makeClient = () =>
       engine === "live"
         ? new LiveClient({ onEvent, executeTool: executeToolRemote, onEnded })
-        : new RealtimeClient({ onEvent, executeTool: executeToolRemote, onEnded });
+        : new RealtimeClient({ onEvent, executeTool: executeToolRemote, onEnded, onStage });
+    let client = makeClient();
     clientRef.current = client;
     setMuted(false);
+    newTelemetrySession();
+    const connectStarted = performance.now();
+    const voice = engine === "live" ? voices.live : voices.realtime;
     try {
       const conversationId = await ensureConversation();
       // A prefetched key has no history in it, so a resumed conversation needs a fresh one.
       const credentials = hasHistory.current ? () => fetchSessionCredentials(conversationId, voices.realtime) : takeCredentials;
-      if (client instanceof LiveClient) await client.connect(conversationId, voices.live);
-      else await client.connect(credentials, mode);
+      const connect = (c: typeof client) =>
+        c instanceof LiveClient ? c.connect(conversationId, voices.live) : c.connect(credentials, mode);
+      try {
+        await connect(client);
+      } catch (err) {
+        // One automatic retry when the network, not the mic or the setup, got in the way.
+        if (!(err instanceof ConnectError) || !err.retryable || clientRef.current !== client) throw err;
+        track("connect_retry", { engine, stage: err.stage, error: err.message });
+        await new Promise((r) => setTimeout(r, 1200));
+        client = makeClient();
+        clientRef.current = client;
+        await connect(client);
+      }
       client.setOutputMuted(outputMutedRef.current);
+      track("session_started", { engine, voice, conversationId, connectedMs: Math.round(performance.now() - connectStarted) });
       const text = pendingText.current;
       pendingText.current = null;
       if (text && !client.sendText(text)) {
@@ -97,8 +117,10 @@ export function useVoiceSession() {
       }
       // The assistant speaks first, unless the call started with something the user typed.
       if (!text) client.greet(greetingInstruction(boardInfoRef.current, hasHistory.current));
-    } catch {
+    } catch (err) {
       // The client already emitted a failed connection event with the reason.
+      track("session_failed", { engine, error: err instanceof Error ? err.message : String(err), afterMs: Math.round(performance.now() - connectStarted) });
+      flushTelemetry();
       clientRef.current = null;
       pendingText.current = null;
     }
@@ -124,7 +146,11 @@ export function useVoiceSession() {
   );
 
   const stop = useCallback(() => {
-    if (clientRef.current) dispatch({ type: "session_closing", by: "user" });
+    if (clientRef.current) {
+      dispatch({ type: "session_closing", by: "user" });
+      track("session_ended", { endedBy: "user" });
+      flushTelemetry();
+    }
     clientRef.current?.disconnect();
     clientRef.current = null;
     setMuted(false);
@@ -363,6 +389,8 @@ export function useVoiceSession() {
     levels,
     dismissError: (id: number) => dispatch({ type: "dismiss_error", id }),
     board,
+    /** "Stop waiting" for a slow board call: it ends now and the assistant is told. */
+    stopWaiting: () => clientRef.current?.cancelTools(),
     /** Highlight one of the listed items, e.g. from a reply that mentions it. */
     focusItem: (id: number) => {
       const item = state.results?.items.find((i) => i.id === id);

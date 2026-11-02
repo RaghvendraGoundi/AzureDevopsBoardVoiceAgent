@@ -1,8 +1,9 @@
 "use client";
 
 import type { AgentStatus, ToolResponse, VoiceEvent } from "@/types/voice";
-import { MicrophoneError } from "./realtimeClient";
+import { ConnectError, MicrophoneError } from "./realtimeClient";
 import { signInAgainOn401 } from "./toolExecutor";
+import { PROACTIVE_STATUS_MS, RunningTools, STATUS_AFTER_MS, statusNote } from "./toolRun";
 
 /**
  * Browser client for GPT-Live over WebRTC. GPT-Live is full duplex and takes
@@ -121,6 +122,10 @@ export class LiveClient {
   private delegations = new Map<string, Delegation>();
   /** Every tool run, chained in order. */
   private toolQueue: Promise<void> = Promise.resolve();
+  /** Running board calls: bounded, cancellable, and timed for status updates. */
+  private tools = new RunningTools();
+  private statusTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastStatusAt = 0;
   /** When the assistant last said anything. */
   private lastSpokeAt = 0;
   /** A finished backend answer the voice model hasn't spoken yet. */
@@ -188,6 +193,7 @@ export class LiveClient {
 
       const res = await fetch("/api/voice/live", {
         method: "POST",
+        signal: AbortSignal.timeout(20_000),
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sdp: pc.localDescription?.sdp, conversationId: conversationId ?? null, voice: voice ?? null }),
       });
@@ -204,10 +210,22 @@ export class LiveClient {
       this.emit({ type: "agent_status", status: "listening" });
     } catch (err) {
       this.teardown();
-      const message = err instanceof Error ? err.message : "Couldn't start the GPT-Live session.";
-      this.emit({ type: "connection", state: "failed", error: message });
+      const timedOut = err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError");
+      const failure =
+        err instanceof MicrophoneError
+          ? err
+          : new ConnectError(
+              timedOut
+                ? "GPT-Live didn't answer within 20 s. A firewall or proxy may be blocking it; try the connection check at /diagnostics."
+                : err instanceof Error
+                  ? err.message
+                  : "Couldn't start the GPT-Live session.",
+              "offer",
+              true,
+            );
+      this.emit({ type: "connection", state: "failed", error: failure.message });
       this.emit({ type: "agent_status", status: "error" });
-      throw err;
+      throw failure;
     }
   }
 
@@ -400,14 +418,11 @@ export class LiveClient {
     }
     const run = async () => {
       this.emit({ type: "tool_started", callId: call.call_id, tool: call.name, args });
-      let result: ToolResponse;
-      try {
-        result = await this.opts.executeTool(call.name, args);
-      } catch {
-        result = {
-          output: { ok: false, error: "The board service couldn't be reached." },
-          uiEvents: [{ type: "error", message: "The board service couldn't be reached." }],
-        };
+      this.armStatusTimer();
+      const result = await this.tools.run(call.call_id, call.name, () => this.opts.executeTool(call.name, args));
+      if (!this.tools.busy && this.statusTimer) {
+        clearTimeout(this.statusTimer);
+        this.statusTimer = null;
       }
       result.uiEvents.forEach((e) => this.emit(e));
       this.emit({ type: "tool_finished", callId: call.call_id, tool: call.name, ok: result.output.ok !== false });
@@ -455,7 +470,35 @@ export class LiveClient {
     this.user = null;
     const text = u.text.trim();
     this.emit({ type: "user_transcript", id: u.id, text, final: true });
-    if (!this.ending && isEndRequest(text)) this.endAfterGoodbye();
+    if (!this.ending && isEndRequest(text)) {
+      this.endAfterGoodbye();
+      return;
+    }
+    // Talking while the board is still working: have GPT-Live say what's going on.
+    const running = this.tools.longest();
+    if (text && running && running.ms >= STATUS_AFTER_MS) this.sayStatus(statusNote(running, true));
+  }
+
+  /** A short spoken status while a board call is still running (GPT-Live speaks commentary). */
+  private sayStatus(note: string) {
+    const now = Date.now();
+    if (now - this.lastStatusAt < 5_000 || this.ending) return;
+    this.lastStatusAt = now;
+    this.send({ type: "session.commentary.append", event_id: this.nextId("status"), delegation_id: null, content: note });
+  }
+
+  private armStatusTimer() {
+    if (this.statusTimer) return;
+    this.statusTimer = setTimeout(() => {
+      this.statusTimer = null;
+      const running = this.tools.longest();
+      if (running) this.sayStatus(statusNote(running, false));
+    }, PROACTIVE_STATUS_MS);
+  }
+
+  /** "Stop waiting": running board calls end now with a cancellation result the backend can explain. */
+  cancelTools() {
+    this.tools.cancelAll();
   }
 
   private finishAssistant() {
@@ -569,6 +612,9 @@ export class LiveClient {
   }
 
   private teardown() {
+    this.tools.cancelAll();
+    if (this.statusTimer) clearTimeout(this.statusTimer);
+    this.statusTimer = null;
     for (const u of [this.user, this.assistant]) if (u) clearTimeout(u.timer);
     this.user = this.assistant = null;
     if (this.endTimer) clearTimeout(this.endTimer);

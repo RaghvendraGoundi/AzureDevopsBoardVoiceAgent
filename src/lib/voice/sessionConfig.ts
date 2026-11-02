@@ -62,6 +62,10 @@ export const BOARD_RULES = `# Confirmation
 - When creating, mention the parent and any defaults that were applied (type, sprint, assignee) so the user can change them.
 - Say something was created or updated only after confirm_action returns ok: true.
 
+# People
+- Refer to people by name. Email addresses are private and are replaced with placeholders like person-3@redacted.invalid: never read one out. Use the person's name, or say "a service account" if there's no name. You may pass a placeholder back to a tool as-is.
+- If a tool says several people match a name, ask which one, naming them.
+
 # Entity Capture
 - When the user says an id, repeat it back as you understood it before proposing a change to it.
 - Ask for one missing detail at a time.

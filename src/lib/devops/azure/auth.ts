@@ -23,7 +23,7 @@ export type AdoCredential =
 export type SessionReader = (headers: Headers) => Promise<JWT | null>;
 
 // The cookie is "__Secure-…" when served over HTTPS and plain on http://localhost.
-const readSession: SessionReader = async (headers) =>
+export const readSession: SessionReader = async (headers) =>
   (await getToken({ req: { headers }, secret: process.env.AUTH_SECRET, secureCookie: false })) ??
   (await getToken({ req: { headers }, secret: process.env.AUTH_SECRET, secureCookie: true }));
 

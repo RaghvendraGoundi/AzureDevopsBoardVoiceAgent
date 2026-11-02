@@ -1,5 +1,5 @@
 import type { WorkItemRepository } from "./repository";
-import type { BoardContext, CreateWorkItemInput, WorkItem, WorkItemDetail, WorkItemPatch, WorkItemQuery } from "./types";
+import type { BoardContext, CreateWorkItemInput, Person, WorkItem, WorkItemDetail, WorkItemPatch, WorkItemQuery, WorkItemRef } from "./types";
 
 /**
  * Small TTL cache with in-flight de-duplication: two tools asking for the
@@ -91,6 +91,15 @@ export class CachedBoard implements WorkItemRepository {
       this.afterWrite([id]);
       throw err;
     }
+  }
+
+  ancestorsOf(items: WorkItem[]): Promise<WorkItemRef[]> {
+    const key = `${this.prefix}anc:${items.map((i) => `${i.id}>${i.parentId ?? ""}`).sort().join(",")}`;
+    return this.cache.get(key, QUERY_TTL_MS, () => this.inner.ancestorsOf?.(items) ?? Promise.resolve([]));
+  }
+
+  searchPeople(text: string): Promise<Person[]> {
+    return this.cache.get(`${this.prefix}people:${text.trim().toLowerCase()}`, CONTEXT_TTL_MS, () => this.inner.searchPeople?.(text) ?? Promise.resolve([]));
   }
 
   async deleteComment(itemId: number, commentId: number): Promise<void> {

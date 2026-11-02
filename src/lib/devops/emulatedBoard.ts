@@ -2,15 +2,17 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { categoryOf, sprintNameFor } from "./process";
 import { WorkItemError, type WorkItemRepository } from "./repository";
-import { buildSeed, emulatedContext, type StoredItem } from "./seed";
+import { buildSeed, emulatedContext, emulatedOrgPeople, type StoredItem } from "./seed";
 import type {
   BoardContext,
   CreateWorkItemInput,
+  Person,
   WorkItem,
   WorkItemComment,
   WorkItemDetail,
   WorkItemPatch,
   WorkItemQuery,
+  WorkItemRef,
 } from "./types";
 
 /** Bumped when the stored shape changes; older files are reseeded. */
@@ -249,6 +251,32 @@ export class EmulatedBoard implements WorkItemRepository {
       item.changedAt = this.now().toISOString();
       return this.view(item, data.items, ctx);
     });
+  }
+
+  async ancestorsOf(list: WorkItem[]): Promise<WorkItemRef[]> {
+    const { items } = await this.data();
+    const known = new Set(list.map((i) => i.id));
+    const out: WorkItemRef[] = [];
+    let wanted = list.map((i) => i.parentId);
+    for (let level = 0; level < 5 && wanted.some((p) => p !== null); level++) {
+      const next: Array<number | null> = [];
+      for (const id of wanted) {
+        if (id === null || known.has(id)) continue;
+        known.add(id);
+        const p = items.find((i) => i.id === id);
+        if (!p) continue;
+        out.push({ id: p.id, title: p.title, type: p.type, state: p.state, parentId: p.parentId });
+        next.push(p.parentId);
+      }
+      wanted = next;
+    }
+    return out;
+  }
+
+  async searchPeople(text: string): Promise<Person[]> {
+    const ctx = await this.context();
+    const q = text.trim().toLowerCase();
+    return [ctx.me, ...ctx.members, ...emulatedOrgPeople()].filter((p) => p.displayName.toLowerCase().includes(q));
   }
 
   async deleteComment(itemId: number, commentId: number): Promise<void> {

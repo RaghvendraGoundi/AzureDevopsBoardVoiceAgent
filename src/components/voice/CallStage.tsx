@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { showAliases } from "@/lib/privacy/aliasesClient";
+import { ActivityStrip } from "./ActivityStrip";
 import type { TranscriptEntry, WorkspaceState } from "@/hooks/voice/workspaceReducer";
 import type { InputMode } from "@/lib/voice/realtimeClient";
 import { orbStateFor, VoiceOrb } from "./VoiceOrb";
@@ -17,6 +19,8 @@ interface Props {
   narrowCaptions?: boolean;
   /** Tapping the orb: start a call when idle, interrupt while it speaks. */
   onOrb: () => void;
+  /** "Stop waiting" for a slow board call. */
+  onStopWaiting?: () => void;
 }
 
 function greeting(name: string | undefined, now = new Date()) {
@@ -53,7 +57,7 @@ function lastExchange(transcript: TranscriptEntry[]) {
 }
 
 /** The middle of the screen: when and how the assistant is, the orb, and live captions. */
-export function CallStage({ state, mode, talking, muted, captions, demoRunning, levels, narrowCaptions, onOrb }: Props) {
+export function CallStage({ state, mode, talking, muted, captions, demoRunning, levels, narrowCaptions, onOrb, onStopWaiting }: Props) {
   const [now, setNow] = useState(() => Date.now());
   const live = state.connection === "connected" || demoRunning;
   const { status, pending, activeTool, boardInfo } = state;
@@ -88,7 +92,7 @@ export function CallStage({ state, mode, talking, muted, captions, demoRunning, 
   } else if (status === "processing") {
     word = "Thinking";
     ind = "t";
-    sub = activeTool ?? "Working on it…";
+    sub = activeTool ? "Working on your board" : "Working on it…";
   } else if (live) {
     word = mode === "ptt" && !talking ? "Hold to talk" : "Listening";
     ind = mode === "ptt" && !talking ? "i" : "l";
@@ -117,6 +121,12 @@ export function CallStage({ state, mode, talking, muted, captions, demoRunning, 
       </h1>
       {/* Before a call: the greeting here, and the hint under the orb (as designed). */}
       {!idle && <p className="mt-1.5 text-[15px] text-[#8ea6bf]">{sub}</p>}
+      {live && <ActivityStrip steps={state.steps} variant="stage" onStop={onStopWaiting} />}
+      {state.connection === "failed" && (
+        <a className="textbtn mt-1" href="/diagnostics">
+          Run the connection check
+        </a>
+      )}
 
       <button
         className={`orbbtn my-[clamp(4px,1.5vh,20px)] ${
@@ -143,7 +153,7 @@ export function CallStage({ state, mode, talking, muted, captions, demoRunning, 
             <>
               <p className="capwho mb-1">DEVOPS VOICE</p>
               <p className="capl line-clamp-2">
-                {highlight(them.text)}
+                {highlight(showAliases(them.text))}
                 {!them.final && <span className="cur" aria-hidden />}
               </p>
             </>

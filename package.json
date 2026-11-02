@@ -16,19 +16,27 @@
     "check": "npm run lint && npm test",
     "board:reset": "node scripts/reset-board.mjs",
     "voice:audio": "node scripts/voice-test/make-audio.mjs",
-    "design:capture": "node scripts/voice-test/make-audio.mjs design-tour && node scripts/voice-test/capture.mjs"
+    "design:capture": "node scripts/voice-test/make-audio.mjs design-tour && node scripts/voice-test/capture.mjs",
+    "db:migrate": "node scripts/db.mjs migrate",
+    "db:purge": "node scripts/db.mjs purge"
   },
   "dependencies": {
+    "@azure/identity": "4.14.0",
+    "@azure/monitor-opentelemetry": "1.20.1",
+    "@opentelemetry/api": "1.9.1",
     "lucide-react": "1.57.0",
     "next": "^15.5.4",
     "next-auth": "5.0.0-beta.32",
+    "pg": "8.23.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.10",
     "@tailwindcss/postcss": "^4.1.13",
     "@types/node": "^22.18.0",
+    "@types/pg": "8.23.1",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "tailwindcss": "^4.1.13",

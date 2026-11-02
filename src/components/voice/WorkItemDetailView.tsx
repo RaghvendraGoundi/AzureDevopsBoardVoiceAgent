@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { WorkItemDetail } from "@/lib/devops/types";
 import { relativeTime } from "./time";
-import { ChevronLeftIcon, ChevronRightIcon, CommentIcon, EditIcon, ExternalIcon, FlagIcon, SendIcon, TrashIcon, TypeIcon } from "./icons";
+import { LockIcon, ChevronLeftIcon, ChevronRightIcon, CommentIcon, EditIcon, ExternalIcon, FlagIcon, SendIcon, TrashIcon, TypeIcon } from "./icons";
 import { StateBadge, typeTone } from "./WorkItemCard";
 
 interface Props {
@@ -90,6 +90,14 @@ export function WorkItemDetailView({ detail, backLabel, onBack, onOpen, onPropos
         )}
       </header>
 
+      {detail.restricted && (
+        <p className="locked" role="note">
+          <LockIcon size={15} />
+          Assigned to someone else. You can see where it sits in the hierarchy, but only its owner or an admin can open or change it.
+        </p>
+      )}
+
+      {!detail.restricted && (
       <dl className="facts">
         <div>
           <dt>Assigned</dt>
@@ -121,6 +129,7 @@ export function WorkItemDetailView({ detail, backLabel, onBack, onOpen, onPropos
           <dd>{detail.changedAt ? relativeTime(Date.parse(detail.changedAt)) : "–"}</dd>
         </div>
       </dl>
+      )}
       {detail.tags.length > 0 && (
         <p className="tagrow">
           {detail.tags.map((t) => (
@@ -131,6 +140,7 @@ export function WorkItemDetailView({ detail, backLabel, onBack, onOpen, onPropos
         </p>
       )}
 
+      {!detail.restricted && (
       <section className="wd-sec" aria-labelledby="wd-desc">
         <div className="wd-sec-h">
           <h3 id="wd-desc">Description</h3>
@@ -173,6 +183,8 @@ export function WorkItemDetailView({ detail, backLabel, onBack, onOpen, onPropos
         )}
       </section>
 
+      )}
+
       {detail.children.length > 0 && (
         <section className="wd-sec" aria-labelledby="wd-children">
           <div className="wd-sec-h">
@@ -195,6 +207,7 @@ export function WorkItemDetailView({ detail, backLabel, onBack, onOpen, onPropos
         </section>
       )}
 
+      {!detail.restricted && (
       <section className="wd-sec" aria-labelledby="wd-comments">
         <div className="wd-sec-h">
           <h3 id="wd-comments">Comments</h3>
@@ -234,6 +247,7 @@ export function WorkItemDetailView({ detail, backLabel, onBack, onOpen, onPropos
           </ol>
         )}
       </section>
+      )}
     </article>
   );
 }
